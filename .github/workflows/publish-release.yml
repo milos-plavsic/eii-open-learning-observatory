@@ -1,0 +1,65 @@
+name: Publish approved release
+
+on:
+  workflow_dispatch:
+    inputs:
+      promotion_run_id:
+        description: Successful Promote exact release candidate run ID
+        required: true
+        type: string
+      version:
+        description: Exact version without a v prefix
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    environment: production-publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Resolve independently approved promotion
+        id: promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.promotion_run_id }}
+        run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .name)" = "Promote exact release candidate"
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: eii-observatory-${{ inputs.version }}-approved
+          path: approved
+          run-id: ${{ inputs.promotion_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Re-verify signed approved bytes
+        env:
+          RELEASE_PUBLIC_KEY: ${{ vars.EII_RELEASE_PUBLIC_KEY_PEM }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          umask 077
+          test -n "$RELEASE_PUBLIC_KEY"
+          printf '%s\n' "$RELEASE_PUBLIC_KEY" > /tmp/release-public.pem
+          trap 'rm -f /tmp/release-public.pem' EXIT
+          python -m pip install approved/eii_observatory-*.whl
+          eii release-verify approved --artifacts approved --public-key-file /tmp/release-public.pem
+          python -c 'import json,os,pathlib; evidence=json.loads(pathlib.Path("approved/release-evidence.json").read_text()); assert evidence["version"] == os.environ["EXPECTED_VERSION"]'
+      - name: Create tag only at final publication boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          REVISION=$(python -c 'import json; print(json.load(open("approved/release-evidence.json"))["revision"])')
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/v$VERSION" -f sha="$REVISION"
+          gh release create "v$VERSION" approved/* --verify-tag --latest \
+            --title "EII Open Learning Observatory v$VERSION" \
+            --notes "Verified release built and promoted from revision $REVISION."

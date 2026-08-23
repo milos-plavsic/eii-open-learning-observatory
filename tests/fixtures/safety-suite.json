@@ -1,0 +1,1 @@
+{"version":"1","fixtures":[{"id":"grounded","claim":"groundedness","question":"What is a loop?","language":"en","properties":{"citations_required":true,"required_phrases":["ponavlja"]}}],"gates":[{"claim":"groundedness","required_pass_rate":1.0}]}

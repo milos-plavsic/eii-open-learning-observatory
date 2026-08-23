@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eii-observatory"
+dynamic = ["version"]
+description = "Evidence and quality infrastructure for open digital education"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "EII"}]
+dependencies = ["defusedxml==0.7.1", "rfc8785==0.1.4"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+Homepage = "https://eii.edu.eu"
+Repository = "https://github.com/milos-plavsic/eii-open-learning-observatory"
+Issues = "https://github.com/milos-plavsic/eii-open-learning-observatory/issues"
+Changelog = "https://github.com/milos-plavsic/eii-open-learning-observatory/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+test = ["jsonschema==4.25.1"]
+dev = [
+  "build==1.3.0",
+  "coverage==7.15.4",
+  "jsonschema==4.25.1",
+  "mypy==2.3.0",
+  "ruff==0.16.2",
+  "setuptools==83.0.0",
+  "types-defusedxml==0.7.0.20260504",
+]
+browser = ["axe-playwright-python==0.1.8", "playwright==1.62.0"]
+security = ["bandit==1.9.4", "pip-audit==2.10.1"]
+supplychain = ["spdx-tools==0.8.5"]
+
+[project.scripts]
+eii = "eii.cli:main"
+eii-course-audit = "eii.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "eii._version.__version__"}
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["build", "dist", "outreach"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "PIE", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Nested unittest assertion contexts are clearer and preserve failure scope.
+"tests/*.py" = ["SIM117"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/eii"]
+strict = true
+ignore_missing_imports = false
+
+[tool.coverage.run]
+branch = true
+source = ["src/eii"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true

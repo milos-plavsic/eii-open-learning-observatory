@@ -1,0 +1,23 @@
+classroom.example.internal {
+    tls internal
+    encode zstd gzip
+    request_body {
+        max_size 32KB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    handle /metrics {
+        respond "Not Found" 404
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            health_uri /readyz
+            health_interval 30s
+        }
+    }
+}

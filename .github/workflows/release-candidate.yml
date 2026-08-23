@@ -1,0 +1,81 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact producer version without a v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quality-suite:
+    uses: ./.github/workflows/ci.yml
+
+  build-candidate:
+    needs: quality-suite
+    runs-on: ubuntu-latest
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
+        with:
+          version: "0.12.3"
+          enable-cache: false
+      - name: Require main and bind requested version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          uv sync --frozen --extra dev --extra supplychain
+          uv run python -c 'import os; from eii import __version__; requested=os.environ["REQUESTED_VERSION"]; assert requested == __version__, f"requested {requested!r} != producer {__version__!r}"'
+      - name: Build candidate twice
+        run: |
+          SOURCE_DATE_EPOCH=1700000000 uv run python -m build --sdist --wheel --outdir /tmp/build-a
+          SOURCE_DATE_EPOCH=1700000000 uv run python -m build --sdist --wheel --outdir /tmp/build-b
+          PYTHONPATH=src uv run python -c 'from pathlib import Path; from eii.supply_chain import normalize_sdist_gzip; [normalize_sdist_gzip(p) for d in ("/tmp/build-a","/tmp/build-b") for p in Path(d).glob("*.tar.gz")]'
+          cmp /tmp/build-a/eii_observatory-*.whl /tmp/build-b/eii_observatory-*.whl
+          cmp /tmp/build-a/eii_observatory-*.tar.gz /tmp/build-b/eii_observatory-*.tar.gz
+      - name: Verify version binding and release evidence
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          PYTHONPATH=src uv run python tools/release_preflight.py --version "$REQUESTED_VERSION" --repository . --revision "$GITHUB_SHA" /tmp/build-a/*.whl /tmp/build-a/*.tar.gz
+          PYTHONPATH=src uv run python -c 'import hashlib,os,subprocess; from pathlib import Path; from eii.supply_chain import build_release_evidence,write_release_evidence,verify_release_evidence; d=Path("/tmp/build-a"); artifacts=tuple(d.glob("*.whl"))+tuple(d.glob("*.tar.gz")); source_digest="sha256:"+hashlib.sha256(subprocess.run(["git","archive","--format=tar","HEAD"],check=True,capture_output=True).stdout).hexdigest(); evidence=build_release_evidence(artifacts,project="eii-observatory",version=os.environ["REQUESTED_VERSION"],revision=os.environ["GITHUB_SHA"],source_digest=source_digest); write_release_evidence(evidence,Path("/tmp/release-evidence")); verify_release_evidence(Path("/tmp/release-evidence/release-evidence.json"),d)'
+          uv run pyspdxtools -i /tmp/release-evidence/sbom.spdx.json
+      - name: Assemble unpublished candidate
+        run: |
+          mkdir release-candidate
+          cp /tmp/build-a/* release-candidate/
+          cp /tmp/release-evidence/* release-candidate/
+      - name: Attest candidate build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release-candidate/*.whl
+            release-candidate/*.tar.gz
+            release-candidate/release-evidence.json
+            release-candidate/SHA256SUMS
+      - name: Attest candidate SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release-candidate/*.whl
+            release-candidate/*.tar.gz
+          sbom-path: release-candidate/sbom.spdx.json
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: eii-observatory-${{ inputs.version }}-unpublished
+          path: release-candidate/
+          if-no-files-found: error
+          retention-days: 14

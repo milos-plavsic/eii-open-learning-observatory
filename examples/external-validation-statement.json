@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "gate_type": "independent-reproduction",
+  "executed_at": "2026-08-21T12:00:00+00:00",
+  "organization": "Independent reviewer organization",
+  "reviewer": "Named or organizational reviewer identity",
+  "scope": "Reproduced documented release gates from a clean checkout",
+  "procedure_version": "docs/verification.md@0.1.0",
+  "subject_hashes": ["sha256:0000000000000000000000000000000000000000000000000000000000000000"],
+  "outcome": "conditional",
+  "findings": [],
+  "limitations": ["Replace the placeholder subject hash with the reviewed release hash."]
+}

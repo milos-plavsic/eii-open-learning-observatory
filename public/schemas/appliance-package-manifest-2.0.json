@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/appliance-package-manifest-2.0.json",
+  "title": "EII Offline Appliance Package Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "package_id",
+    "version",
+    "created_at",
+    "files",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "package_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 10000,
+      "propertyNames": {
+        "pattern": "^content/[^\\\\\\u0000-\\u001f]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

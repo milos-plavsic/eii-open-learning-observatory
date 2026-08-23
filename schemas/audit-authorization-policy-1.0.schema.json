@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/audit-authorization-policy-1.0.json",
+  "title": "EII Audit Signer Authorization Policy",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "trusted_signers"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "trusted_signers": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["signer_id", "key_fingerprint", "purposes", "valid_from", "valid_until"],
+        "properties": {
+          "signer_id": {"type": "string", "minLength": 1},
+          "key_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "purposes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "valid_from": {"type": "string", "format": "date-time"},
+          "valid_until": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/federation-envelope-v1.schema.json",
+  "title": "EII Learning Assurance Federation Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bundle", "signature", "signing_key_fingerprint"],
+  "properties": {
+    "bundle": { "$ref": "evidence-bundle.schema.json" },
+    "signature": { "type": "string", "pattern": "^ed25519:[A-Za-z0-9+/]+={0,2}$" },
+    "signing_key_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "provider_id": { "type": "string", "format": "uuid" },
+    "audit_run_id": { "type": "string", "format": "uuid" }
+  }
+}

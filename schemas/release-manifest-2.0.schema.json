@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/release-manifest-2.0.json",
+  "title": "EII signed release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "version", "revision", "files"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "project": {"type": "string", "minLength": 1},
+    "version": {"type": "string", "minLength": 1},
+    "revision": {"type": "string", "minLength": 1},
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["SHA256SUMS", "release-evidence.json", "sbom.spdx.json"],
+      "properties": {
+        "SHA256SUMS": {"$ref": "#/$defs/file"},
+        "release-evidence.json": {"$ref": "#/$defs/file"},
+        "sbom.spdx.json": {"$ref": "#/$defs/file"}
+      }
+    }
+  },
+  "$defs": {
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sha256", "size"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/plct-attestation-v1.json",
+  "title": "Petlja PLCT conformance attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "statement", "key_fingerprint", "signature"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "key_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "signature": {"type": "string", "pattern": "^ed25519:[A-Za-z0-9+/]+={0,2}$"},
+    "statement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "organization", "maintainer", "repository_revision", "reviewed_at", "report_hash", "export_hash", "course_release_hash"],
+      "properties": {
+        "schema_version": {"const": "1.0"}, "organization": {"type": "string", "minLength": 1},
+        "maintainer": {"type": "string", "minLength": 1}, "repository_revision": {"type": "string", "minLength": 1},
+        "reviewed_at": {"type": "string", "format": "date-time"},
+        "report_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "export_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "course_release_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

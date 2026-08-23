@@ -1,0 +1,1 @@
+{"id":"cocreate-programming","version":"1","terms":[{"concept_id":"programming.loop","translations":{"en":["loop"],"sr":["petlja"],"es":["bucle"],"pt":["ciclo"],"ca":["bucle"],"hr":["petlja"]},"forbidden":{}},{"concept_id":"programming.loop.for.range","translations":{"en":["range"],"sr":["opseg"],"es":["rango"],"pt":["intervalo"],"ca":["rang"],"hr":["raspon"]},"forbidden":{}}]}

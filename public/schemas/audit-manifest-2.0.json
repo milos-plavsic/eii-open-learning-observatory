@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/audit-manifest-2.0.json",
+  "title": "EII Signed Audit Manifest 2.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "created_at",
+    "signer_id",
+    "signer_key_fingerprint",
+    "purpose",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "bundle_id": {
+      "$ref": "#/$defs/hash"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signer_key_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence.json",
+        "alignments.json",
+        "translation-status.json",
+        "index.html"
+      ],
+      "properties": {
+        "evidence.json": {
+          "$ref": "#/$defs/file"
+        },
+        "alignments.json": {
+          "$ref": "#/$defs/file"
+        },
+        "translation-status.json": {
+          "$ref": "#/$defs/file"
+        },
+        "index.html": {
+          "$ref": "#/$defs/file"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "size"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/semantic-evaluator-policy-1.0.json",
+  "title": "EII Semantic Evaluator Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluators"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "quorum": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "overall_timeout_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "max_total_cost": {
+      "type": "number",
+      "minimum": 0
+    },
+    "max_total_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "max_outstanding_panels": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "minimum_declared_operators": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "minimum_declared_model_families": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "evaluators": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "base_url",
+          "model"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "api_key_env": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model_revision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "operator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model_family": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

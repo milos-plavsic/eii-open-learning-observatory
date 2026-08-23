@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.coverage
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.sqlite
+*.eii
+*.egg-info/
+build/
+dist/
+dist-*/
+release-candidate/
+htmlcov/
+eii-report/
+eii-mri-report/

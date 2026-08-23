@@ -1,0 +1,52 @@
+[Unit]
+Description=EII School-in-a-Box classroom service
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=eii-appliance
+Group=eii-appliance
+StateDirectory=eii-appliance
+StateDirectoryMode=0700
+LogsDirectory=eii-appliance
+LogsDirectoryMode=0700
+WorkingDirectory=/var/lib/eii-appliance
+LoadCredential=query.token:/etc/eii-appliance/query.token
+ExecStart=/usr/local/bin/eii appliance-serve --root /var/lib/eii-appliance --host 127.0.0.1 --port 8080 --query-token-file %d/query.token --audit-log /var/log/eii-appliance/audit.jsonl
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+ReadWritePaths=/var/lib/eii-appliance /var/log/eii-appliance
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=4096
+MemoryMax=2G
+TasksMax=256
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

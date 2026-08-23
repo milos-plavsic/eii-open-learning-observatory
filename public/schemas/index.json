@@ -1,0 +1,68 @@
+{
+  "schemas": [
+    {
+      "name": "appliance-package-manifest-2.0.json",
+      "sha256": "9de914a356af741f3e759507ea4f3c82e1874b9c47cb5556430d6b4a033c87fc"
+    },
+    {
+      "name": "audit-authorization-policy-1.0.json",
+      "sha256": "20336c9ed7b9103ef1f7e31e5ade5f14eb96496f18e9aa647bd4d646f9a923a9"
+    },
+    {
+      "name": "audit-manifest-2.0.json",
+      "sha256": "87f502e34c961ccb45c74fdbaebcde134ff00bc0edd92f7b528117c2f5030215"
+    },
+    {
+      "name": "evidence-bundle-2.0.json",
+      "sha256": "5ca585f984318af7b50f2effde734f78c59c9d2fd473e5110c896a1608b3bc34"
+    },
+    {
+      "name": "external-validation-record-v1.json",
+      "sha256": "33da6fbaf2dac825ba1b7e2f44dd54780df4792232441788d07058b991bca896"
+    },
+    {
+      "name": "federation-envelope-v1.schema.json",
+      "sha256": "6e32cb6bf943a051b03b5beb3d5f6dfa8a253b574208a6bb34a6ba9aabac0690"
+    },
+    {
+      "name": "plct-attestation-v1.json",
+      "sha256": "55d241cafbc235fbc5fe6db90f3b799b809a4907cc7ad0c04cb01bd500dd77fc"
+    },
+    {
+      "name": "plct-conformance-report-v1.json",
+      "sha256": "dc5b90761e4cca8e3ab61686d8cc694a42f23b5bc6d1234ab6b45679b660da35"
+    },
+    {
+      "name": "plct-course-export-v1.json",
+      "sha256": "b5d7013f43fa3ba03cb83e4960612f1e59c877f12023924ce7efd44fb3cd6a13"
+    },
+    {
+      "name": "release-evidence-1.0.json",
+      "sha256": "b74953aae90864e2d368106ea7fd25bde6eb1db8560c1ce49cd0c57dd8eb50c3"
+    },
+    {
+      "name": "release-manifest-2.0.json",
+      "sha256": "98737c23882bdbd66a2cf821d1dc8e2bbe18d83eb9135e6959ac0bca4b4e32c4"
+    },
+    {
+      "name": "safety-case-2.0.json",
+      "sha256": "8156b332c47bb51d8d5c80ccdceb763e9a2b2054aa0de591c16d65206d9a6bf2"
+    },
+    {
+      "name": "safety-case-3.0.json",
+      "sha256": "1c752daa27e35963b70f8f82fadf3324ab017f441089d532936be2ce6cddecbd"
+    },
+    {
+      "name": "semantic-evaluation-record-1.0.json",
+      "sha256": "80ed5ea2fe98de4cd87276fc779f4559dfc5d2be82eda22d06041159fc2249e9"
+    },
+    {
+      "name": "semantic-evaluator-policy-1.0.json",
+      "sha256": "e2107a08430187246a60c96e0355a7d4416737f9f568598fcb594bb19a14c2ae"
+    },
+    {
+      "name": "weather-map-2.0.json",
+      "sha256": "ef61f3d9520aec7b50fdd8523d691d0ec381eb65c866d3e6d3576ee063e24822"
+    }
+  ]
+}
