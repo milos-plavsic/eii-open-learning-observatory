@@ -7,15 +7,26 @@ from eii.cli import main
 
 ROOT = Path(__file__).parents[1]
 CORPUS = Path(__file__).parent / "accuracy_corpus" / "corpus.json"
-SEVERITY_RANK = {"none": -1, "info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+CASE_FIELDS = {"id", "sources", "glossary", "expected_findings", "provenance"}
+FINDING_FIELDS = {"finding_type", "severity", "affected_languages", "evidence"}
+EVIDENCE_FIELDS = {"language", "locator", "excerpt"}
 
 
-def assert_severity_ceiling(test: unittest.TestCase, findings: list[dict], ceiling: str) -> None:
-    """Assert a labeled corpus ceiling without silently accepting an unknown label."""
-    if ceiling not in SEVERITY_RANK:
-        raise ValueError(f"unknown accuracy-corpus severity: {ceiling}")
-    actual = max((SEVERITY_RANK[item["severity"]] for item in findings), default=-1)
-    test.assertLessEqual(actual, SEVERITY_RANK[ceiling])
+def finding_projection(item: dict, release_languages: dict[str, str]) -> dict:
+    """Project generated evidence onto every human-labeled correctness field."""
+    return {
+        "finding_type": item["finding_type"],
+        "severity": item["severity"],
+        "affected_languages": item["affected_languages"],
+        "evidence": [
+            {
+                "language": release_languages[reference["course_release_id"]],
+                "locator": reference["block_id"].removeprefix("repo:"),
+                "excerpt": reference["excerpt"],
+            }
+            for reference in item["evidence"]
+        ],
+    }
 
 
 class GoldenAccuracyCorpusTests(unittest.TestCase):
@@ -25,17 +36,25 @@ class GoldenAccuracyCorpusTests(unittest.TestCase):
         identifiers = [case["id"] for case in cases]
         self.assertEqual(len(identifiers), len(set(identifiers)))
         self.assertGreaterEqual(len(cases), 4)
-        self.assertGreaterEqual(
-            sum(case.get("maximum_finding_severity") == "none" for case in cases), 2
-        )
-        self.assertTrue(any(case["expected"] for case in cases))
+        self.assertGreaterEqual(sum(not case["expected_findings"] for case in cases), 2)
+        self.assertTrue(any(case["expected_findings"] for case in cases))
         self.assertTrue(all(case.get("provenance") for case in cases))
+        for case in cases:
+            self.assertLessEqual(set(case), CASE_FIELDS)
+            self.assertEqual(set(case) - {"glossary"}, CASE_FIELDS - {"glossary"})
+            for finding in case["expected_findings"]:
+                self.assertEqual(set(finding), FINDING_FIELDS)
+                self.assertTrue(finding["affected_languages"])
+                self.assertTrue(finding["evidence"])
+                self.assertTrue(
+                    all(set(reference) == EVIDENCE_FIELDS for reference in finding["evidence"])
+                )
         languages = {Path(source).name for case in cases for source in case["sources"]}
         self.assertTrue({"en", "sr", "es", "pt", "ca", "hr"}.issubset(languages))
 
     def test_labeled_multilingual_outputs(self):
         document = json.loads(CORPUS.read_text("utf-8"))
-        self.assertEqual(document["schema_version"], "1.0")
+        self.assertEqual(document["schema_version"], "2.0")
         self.assertTrue(document["cases"])
         for case in document["cases"]:
             with self.subTest(case=case["id"]), tempfile.TemporaryDirectory() as directory:
@@ -49,15 +68,15 @@ class GoldenAccuracyCorpusTests(unittest.TestCase):
                     arguments.extend(("--glossary", str(ROOT / glossary)))
                 self.assertEqual(main(arguments), 0)
                 evidence = json.loads((Path(directory) / "evidence.json").read_text("utf-8"))
-                actual = {item["finding_type"] for item in evidence["findings"]}
-                self.assertLessEqual(set(case["expected"]), actual)
-                self.assertTrue(actual.isdisjoint(case["forbidden"]))
-                if ceiling := case.get("maximum_finding_severity"):
-                    assert_severity_ceiling(self, evidence["findings"], ceiling)
-
-    def test_unknown_severity_ceiling_fails_closed(self):
-        with self.assertRaisesRegex(ValueError, "unknown accuracy-corpus severity"):
-            assert_severity_ceiling(self, [], "urgent")
+                release_languages = {
+                    release["id"]: release["language"] for release in evidence["course_releases"]
+                }
+                actual = sorted(
+                    (finding_projection(item, release_languages) for item in evidence["findings"]),
+                    key=lambda item: item["finding_type"],
+                )
+                expected = sorted(case["expected_findings"], key=lambda item: item["finding_type"])
+                self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

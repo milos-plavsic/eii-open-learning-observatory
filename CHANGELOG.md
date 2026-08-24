@@ -23,7 +23,12 @@ publication process before a 0.3.0 release is declared.
   protected by CI-enforced line and AST-statement budgets.
 - The accuracy corpus now includes four labeled cases, including clean and positive
   six-language fixtures covering numeric, unit, order, code, link, and missing-content
-  signals; corpus-shape ratchets prevent accidental loss of its validation floor.
+  signals. Its exact oracle rejects missing, extra, duplicated, mislocalized,
+  mis-severitized, or misquoted findings, while corpus-shape ratchets prevent
+  accidental loss of its validation floor.
+- Patterned appliance routes use registration-order-independent precedence and reject
+  every intersecting equal-precedence pattern; literal-drift findings identify only
+  releases that differ from the declared canonical first release.
 - Runtime Ed25519 compatibility is behaviorally self-tested, and release governance
   fails closed against self-review and administrator bypass.
 - The validation register maps every provisional or external claim to an owned,

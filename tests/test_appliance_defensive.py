@@ -26,7 +26,7 @@ from eii.appliance import (
     verify_package,
     write_onboarding_page,
 )
-from eii.appliance_router import ApplianceRouter
+from eii.appliance_router import ApplianceRouter, patterns_intersect
 from eii.domain import ModelRun, content_hash
 from eii.safety import AssistantResponse
 
@@ -42,6 +42,18 @@ class Tutor:
 
 
 class ApplianceDefensiveTests(unittest.TestCase):
+    def test_pattern_intersection_is_complete_for_supported_tokens(self):
+        self.assertTrue(patterns_intersect(("{segment}", "foo"), ("bar", "{segment}")))
+        self.assertFalse(patterns_intersect(("{segment}", "foo"), ("bar", "baz")))
+        self.assertFalse(patterns_intersect(("",), ("{segment}",)))
+        self.assertFalse(patterns_intersect(("one",), ("one", "two")))
+        self.assertTrue(patterns_intersect(("one",), ("one",)))
+        self.assertTrue(patterns_intersect(("one", "{path}"), ("one",)))
+        self.assertFalse(patterns_intersect(("one", "{path}"), ()))
+        self.assertTrue(patterns_intersect(("one",), ("one", "{path}")))
+        self.assertFalse(patterns_intersect((), ("one", "{path}")))
+        self.assertTrue(patterns_intersect(("{path}",), ("one", "{path}")))
+
     def test_router_rejects_ambiguous_patterns_dispatches_params_and_404(self):
         calls = []
         router = ApplianceRouter()
@@ -54,8 +66,23 @@ class ApplianceDefensiveTests(unittest.TestCase):
             router.add("GET", "/exact", handler)
         router.add_pattern("GET", "/course/{course_id}", handler)
         router.add("GET", "/{content_path:path}", handler)
-        with self.assertRaisesRegex(ValueError, "ambiguous"):
+        with self.assertRaisesRegex(ValueError, "overlap"):
             router.add_pattern("GET", "/course/{other_name}", handler)
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            router.add_pattern("GET", "/{first}/loops", handler)
+        router.add_pattern("POST", "/{first}/loops", handler)
+        router.add_pattern("GET", "/lesson/{name}/extra", handler)
+        router.add_pattern("GET", "/asset/{name}", handler)
+        specific_first = ApplianceRouter()
+        general_first = ApplianceRouter()
+        specific_first.add_pattern("GET", "/course/{tail:path}", handler)
+        specific_first.add_pattern("GET", "/{tail:path}", handler)
+        general_first.add_pattern("GET", "/{tail:path}", handler)
+        general_first.add_pattern("GET", "/course/{tail:path}", handler)
+        self.assertEqual(
+            [route.template for route in specific_first.patterns],
+            [route.template for route in general_first.patterns],
+        )
         for pattern, message in (
             ("relative/{name}", "absolute"),
             ("/course/{name}?x", "absolute"),

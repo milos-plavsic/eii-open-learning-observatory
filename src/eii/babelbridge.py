@@ -369,6 +369,8 @@ class BabelBridge:
                 continue
             same_multiset = all(Counter(value) == Counter(values[0]) for value in values[1:])
             order_only = label in {"number_or_unit", "link_or_asset"} and same_multiset
+            compared = zip(releases[1:], values[1:], strict=True)
+            affected = tuple(r.language for r, value in compared if value != values[0])
             findings.append(
                 self._finding(
                     f"translation.{label}_{'order_' if order_only else ''}drift",
@@ -381,7 +383,7 @@ class BabelBridge:
                     Severity.LOW if order_only else severity,
                     0.95,
                     tuple(group),
-                    tuple(r.language for r, _ in group),
+                    affected,
                     (
                         "Confirm that reordering preserves instructional and assessment meaning."
                         if order_only

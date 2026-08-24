@@ -19,4 +19,5 @@ with the commit identity, then configure `gpg.ssh.allowedSignersFile` and run
 
 This key signs repository history only. Signed evidence bundles and offline
 appliance releases use the separate trust procedures documented in
-`docs/key-management.md` and `docs/release-operations.md`.
+`docs/key-management.md`, `docs/release-operations.md`, and the fail-closed
+appointment and recovery procedure in `docs/maintainer-succession.md`.

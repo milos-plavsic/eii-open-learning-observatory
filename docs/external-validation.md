@@ -5,6 +5,10 @@ multilingual human accuracy, penetration testing, independent reproduction and
 target-school pilots therefore end in a separately signed record owned by the
 reviewing organization.
 
+For documentation comprehension, use the uncoached tasks and disposition record in
+[`cold-read-review-protocol.md`](cold-read-review-protocol.md). For cryptographic
+and appliance security, use [`security-assessment-brief.md`](security-assessment-brief.md).
+
 Start from `examples/external-validation-statement.json`. Replace every
 placeholder, identify the exact procedure/version and subject artifact hashes,
 record all findings and limitations, and select `passed`, `failed`, or
