@@ -66,12 +66,12 @@ jobs:
         run: |
           for artifact in candidate/*.whl candidate/*.tar.gz; do
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
               --source-digest "$EXPECTED_REVISION" --source-ref refs/heads/main \
               --deny-self-hosted-runners \
               --predicate-type https://slsa.dev/provenance/v1
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
-              --signer-workflow "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
               --source-digest "$EXPECTED_REVISION" --source-ref refs/heads/main \
               --deny-self-hosted-runners \
               --predicate-type https://spdx.dev/Document/v2.3
