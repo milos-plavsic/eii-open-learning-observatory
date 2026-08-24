@@ -2,7 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Current version: **0.2.0**, the second public alpha of the software. The canonical
+Latest public release: **0.2.0**, the second public alpha. The `main` branch is the
+unreleased **0.3.0.dev0** development line. The canonical
 repository is [eii-open-learning-observatory](https://github.com/milos-plavsic/eii-open-learning-observatory).
 
 An independent evidence and quality layer for open digital education. The

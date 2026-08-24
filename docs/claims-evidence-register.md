@@ -21,7 +21,7 @@ Status terms:
 | Offline packages detect unauthorized modification | Ed25519 signatures, startup known-vector self-test and fail-closed activation | Real OpenSSL, behavioral self-test, corruption and end-to-end rotation tests | Internally verified | Independent security assessment; VAL-006 |
 | PLCT exports can be consumed | Proposed schema, adapter and conformance command | Synthetic PLCT fixture | Prototype | Genuine Petlja export and signed attestation; VAL-007 |
 | Deterministic baseline retrieval can be measured | BM25/concept retrieval interface with recall@k and MRR plus down-weighted, phrase-aware glossary expansion | Synthetic monolingual and glossary-covered cross-language fixtures | Prototype | Human-labeled multilingual retrieval benchmark; VAL-008 |
-| Package is portable on declared Python/OS combinations | Wheel/sdist and clean-install workflows | Local 0.2.0 Linux verification plus defined multi-OS CI workflows | Internally verified on Linux | Successful public candidate CI, native macOS/Windows crypto execution and independent clean-room reproduction; VAL-013 |
+| Package is portable on declared Python/OS combinations | Wheel/sdist and clean-install workflows | Merged-main CI on Linux, macOS and Windows, including native cryptographic operations; exact run recorded in `verification.md` | Internally verified on declared CI platforms | Independent clean-room reproduction; VAL-013 |
 
 The numeric `confidence` fields in evidence are deterministic heuristic or
 evaluator self-report signals. Consensus records separately preserve structural

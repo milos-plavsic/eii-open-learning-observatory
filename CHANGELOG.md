@@ -2,6 +2,30 @@
 
 All notable changes are recorded here. This project follows semantic versioning.
 
+## [Unreleased]
+
+Development toward 0.3.0. These changes are not part of the published 0.2.0
+artifacts and must pass the complete candidate, two-person promotion, and
+publication process before a 0.3.0 release is declared.
+
+### Added
+
+- Golden multilingual accuracy and false-positive corpora, property-based detector
+  fuzzing, and a scheduled twenty-pass randomized flakiness workflow.
+- Fixed-universe differential-privacy publication, synchronized Weather storage,
+  and explicit database lineage and fork controls.
+- Structured promotion receipts for candidate identity, source binding, SLSA
+  provenance, and SPDX attestations, all bound into the signed release manifest.
+
+### Changed
+
+- Appliance routing and CLI parsing/dispatch are split into focused modules and
+  protected by CI-enforced line and AST-statement budgets.
+- Runtime Ed25519 compatibility is behaviorally self-tested, and release governance
+  fails closed against self-review and administrator bypass.
+- The validation register maps every provisional or external claim to an owned,
+  evidence-based closure commitment.
+
 ## [0.2.0] - 2026-08-24
 
 The second public alpha strengthens decision integrity, multilingual retrieval,
@@ -132,5 +156,6 @@ educational effectiveness.
 - Multilingual accuracy, educational utility, penetration resistance, independent
   reproducibility, and target-school operations await external evidence.
 
+[Unreleased]: https://github.com/milos-plavsic/eii-open-learning-observatory/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/milos-plavsic/eii-open-learning-observatory/releases/tag/v0.2.0
 [0.1.0]: https://github.com/milos-plavsic/eii-open-learning-observatory/releases/tag/v0.1.0
