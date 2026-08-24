@@ -6,7 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from eii.cli import main
-from eii.weather import MinimizedEvent, Signal, WeatherStore, load_events
+from eii.weather import (
+    MinimizedEvent,
+    Signal,
+    WeatherStore,
+    load_events,
+    load_public_cell_universe,
+)
 from eii.weather_dp import laplace_noise, release_counts
 
 
@@ -180,6 +186,8 @@ class WeatherTests(unittest.TestCase):
                     str(secret),
                     "--ledger-key-file",
                     str(ledger),
+                    "--database-instance-id",
+                    "test-primary",
                     "--minimum-group-size",
                     "3",
                     "--output",
@@ -299,6 +307,122 @@ class WeatherTests(unittest.TestCase):
                     store.connection.execute("SELECT epsilon_spent FROM dp_budget").fetchone()[0],
                     0,
                 )
+
+    def test_fixed_public_universe_removes_data_dependent_cell_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            universe_path = root / "cells.json"
+            universe_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "cells": [
+                            {
+                                "course_key": "loops",
+                                "activity_key": "a1",
+                                "language": "sr",
+                                "concept_id": "programming.equality",
+                                "signal": "misconception",
+                            },
+                            {
+                                "course_key": "loops",
+                                "activity_key": "a2",
+                                "language": "sr",
+                                "concept_id": "programming.range",
+                                "signal": "frustration",
+                            },
+                        ],
+                    }
+                )
+            )
+            universe = load_public_cell_universe(universe_path)
+            with self.assertRaisesRegex(ValueError, "cell bound"):
+                WeatherStore(
+                    root / "bad-bound.sqlite",
+                    secret=b"f" * 32,
+                    max_cells_per_contributor_per_day=0,
+                )
+            with self.assertRaisesRegex(ValueError, "cannot be empty"):
+                WeatherStore(
+                    root / "bad-universe.sqlite",
+                    secret=b"f" * 32,
+                    public_cell_universe=frozenset(),
+                )
+            with WeatherStore(
+                root / "fixed.sqlite",
+                secret=b"f" * 32,
+                public_cell_universe=universe,
+                max_cells_per_contributor_per_day=1,
+                count_granularity=1,
+            ) as store:
+                store.ingest(self.event("one"))
+                second_cell = MinimizedEvent(
+                    datetime.now(UTC).isoformat(),
+                    "loops",
+                    "a2",
+                    "sr",
+                    "programming.range",
+                    Signal.FRUSTRATION,
+                    "one",
+                )
+                store.ingest(second_cell)
+                outside = MinimizedEvent(
+                    datetime.now(UTC).isoformat(),
+                    "loops",
+                    "outside",
+                    "sr",
+                    "x",
+                    Signal.FRUSTRATION,
+                    "one",
+                )
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    store.ingest(outside)
+                cells = store.aggregate()
+                self.assertEqual(len(cells), 2)
+                self.assertEqual({cell.event_count for cell in cells}, {0, 1})
+                store.export(root / "fixed.json")
+                payload = json.loads((root / "fixed.json").read_text())
+                self.assertEqual(
+                    payload["privacy"]["cell_selection_privacy"],
+                    "fixed-public-universe-end-to-end-central-dp",
+                )
+                self.assertEqual(payload["privacy"]["event_count_sensitivity"], 3)
+            for bad in (
+                {},
+                {"schema_version": "2", "cells": []},
+                {"schema_version": "1.0", "cells": []},
+                {"schema_version": "1.0", "cells": [{}]},
+            ):
+                universe_path.write_text(json.dumps(bad))
+                with self.assertRaises(ValueError):
+                    load_public_cell_universe(universe_path)
+
+    def test_database_clone_requires_explicit_lineage_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original, clone = root / "original.sqlite", root / "clone.sqlite"
+            with WeatherStore(
+                original, secret=b"l" * 32, database_instance_id="school-primary"
+            ) as store:
+                store.backup(clone)
+                self.assertEqual(store.database_instance_id, "school-primary")
+            with self.assertRaisesRegex(ValueError, "clone detected"):
+                WeatherStore(clone, secret=b"l" * 32, database_instance_id="school-clone")
+            with WeatherStore(
+                clone,
+                secret=b"l" * 32,
+                database_instance_id="school-clone",
+                allow_database_fork=True,
+            ) as fork:
+                self.assertEqual(fork.database_instance_id, "school-clone")
+                history = fork.connection.execute(
+                    "SELECT instance_id,parent_instance_id FROM privacy_database_lineage_history ORDER BY sequence"
+                ).fetchall()
+                self.assertEqual(
+                    history, [("school-primary", None), ("school-clone", "school-primary")]
+                )
+            with self.assertRaisesRegex(ValueError, "instance id"):
+                WeatherStore(root / "bad.sqlite", secret=b"l" * 32, database_instance_id="bad id")
 
 
 def as_event(event):

@@ -34,9 +34,9 @@ class CliDefensiveTests(unittest.TestCase):
             token.chmod(0o600)
             good = CapabilityReport("x", 4, 1, 1, "small", True, ())
             bad = CapabilityReport("x", 1, 1, 1, "small", False, ("cpu",))
-            with patch("eii.cli.capability_check", return_value=good):
+            with patch("eii.cli_appliance.capability_check", return_value=good):
                 self.assertEqual(main(["appliance-check", "--path", str(root)]), 0)
-            with patch("eii.cli.capability_check", return_value=bad):
+            with patch("eii.cli_appliance.capability_check", return_value=bad):
                 self.assertEqual(main(["appliance-check"]), 2)
             self.assertEqual(
                 main(
@@ -66,13 +66,16 @@ class CliDefensiveTests(unittest.TestCase):
                 ),
                 0,
             )
-            with patch("eii.cli.rollback", return_value={"package_id": "p", "version": "1"}):
+            with patch(
+                "eii.cli_appliance.rollback", return_value={"package_id": "p", "version": "1"}
+            ):
                 self.assertEqual(main(["appliance-rollback", "--root", str(root)]), 0)
             with patch(
-                "eii.cli.recover_active_release", return_value={"package_id": "p", "version": "1"}
+                "eii.cli_appliance.recover_active_release",
+                return_value={"package_id": "p", "version": "1"},
             ):
                 self.assertEqual(main(["appliance-recover", "--root", str(root)]), 0)
-            with patch("eii.cli.serve") as serve:
+            with patch("eii.cli_appliance.serve") as serve:
                 self.assertEqual(
                     main(
                         [
@@ -101,7 +104,7 @@ class CliDefensiveTests(unittest.TestCase):
                 shutdown_grace_seconds=30.0,
             )
             audit = root / "logs" / "appliance.jsonl"
-            with patch("eii.cli.serve") as serve:
+            with patch("eii.cli_appliance.serve") as serve:
                 self.assertEqual(
                     main(
                         [
@@ -156,7 +159,7 @@ class CliDefensiveTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 main(["validate", str(invalid)])
             with patch(
-                "eii.cli.verify_finding_regressions",
+                "eii.cli_review.verify_finding_regressions",
                 return_value={"still_present": 1, "resolved": 0},
             ):
                 self.assertEqual(
@@ -197,14 +200,14 @@ class CliDefensiveTests(unittest.TestCase):
             key.write_text("k")
             auth = root / "auth"
             auth.write_text("{}")
-            with patch("eii.cli.initialize_trust", return_value="fingerprint"):
+            with patch("eii.cli_appliance.initialize_trust", return_value="fingerprint"):
                 self.assertEqual(
                     main(
                         ["appliance-trust-init", "--root", str(root), "--public-key-file", str(key)]
                     ),
                     0,
                 )
-            with patch("eii.cli.create_trust_rotation"):
+            with patch("eii.cli_appliance.create_trust_rotation"):
                 self.assertEqual(
                     main(
                         [
@@ -222,11 +225,11 @@ class CliDefensiveTests(unittest.TestCase):
                     ),
                     0,
                 )
-            with patch("eii.cli.apply_trust_rotation", return_value="new"):
+            with patch("eii.cli_appliance.apply_trust_rotation", return_value="new"):
                 self.assertEqual(
                     main(["appliance-trust-rotation-apply", str(auth), "--root", str(root)]), 0
                 )
-            with patch("eii.cli.serve_study"):
+            with patch("eii.cli_review.serve_study"):
                 self.assertEqual(
                     main(
                         [
@@ -242,7 +245,7 @@ class CliDefensiveTests(unittest.TestCase):
                     0,
                 )
             audit = root / "logs" / "study.jsonl"
-            with patch("eii.cli.serve_study") as serve_study:
+            with patch("eii.cli_review.serve_study") as serve_study:
                 self.assertEqual(
                     main(
                         [
@@ -260,7 +263,7 @@ class CliDefensiveTests(unittest.TestCase):
                     0,
                 )
                 self.assertIs(serve_study.call_args.kwargs["audit_stream"].closed, True)
-            with patch("eii.cli.sign_release_evidence", return_value=root / "signature"):
+            with patch("eii.cli_operations.sign_release_evidence", return_value=root / "signature"):
                 self.assertEqual(
                     main(
                         [
@@ -274,7 +277,7 @@ class CliDefensiveTests(unittest.TestCase):
                     ),
                     0,
                 )
-            with patch("eii.cli.verify_signed_release"):
+            with patch("eii.cli_operations.verify_signed_release"):
                 self.assertEqual(
                     main(
                         [
@@ -327,6 +330,8 @@ class CliDefensiveTests(unittest.TestCase):
                         str(short),
                         "--ledger-key-file",
                         str(short),
+                        "--database-instance-id",
+                        "test-primary",
                     ]
                 )
             source = root / "source"
@@ -413,8 +418,8 @@ class CliDefensiveTests(unittest.TestCase):
                 analyze=lambda release: (), generate_support_tests=lambda release, count: ()
             )
             with (
-                patch("eii.cli._model_client", return_value=fake_client),
-                patch("eii.cli.LLMEditorialAuditor", return_value=auditor),
+                patch("eii.cli_learning.model_client", return_value=fake_client),
+                patch("eii.cli_learning.LLMEditorialAuditor", return_value=auditor),
             ):
                 self.assertEqual(
                     main(
@@ -433,7 +438,7 @@ class CliDefensiveTests(unittest.TestCase):
                     ),
                     0,
                 )
-            with patch("eii.cli._model_client", return_value=fake_client):
+            with patch("eii.cli_learning.model_client", return_value=fake_client):
                 with self.assertRaises(SystemExit):
                     main(
                         [
@@ -454,10 +459,10 @@ class CliDefensiveTests(unittest.TestCase):
             fake_tutor = MagicMock()
             fake_case = SimpleNamespace(release_decision="configured_gates_failed")
             with (
-                patch("eii.cli._model_client", return_value=fake_client),
-                patch("eii.cli.GroundedTutor", return_value=fake_tutor),
-                patch("eii.cli.SafetyCaseRunner.run_with_human", return_value=fake_case),
-                patch("eii.cli.write_safety_case"),
+                patch("eii.cli_learning.model_client", return_value=fake_client),
+                patch("eii.cli_learning.GroundedTutor", return_value=fake_tutor),
+                patch("eii.cli_learning.SafetyCaseRunner.run_with_human", return_value=fake_case),
+                patch("eii.cli_learning.write_safety_case"),
             ):
                 self.assertEqual(
                     main(
@@ -495,7 +500,7 @@ class CliDefensiveTests(unittest.TestCase):
                             str(root / "missing"),
                         ]
                     )
-            with patch("eii.cli.safety_trust.sign_safety_case"):
+            with patch("eii.cli_learning.safety_trust.sign_safety_case"):
                 self.assertEqual(
                     main(
                         [
@@ -509,7 +514,7 @@ class CliDefensiveTests(unittest.TestCase):
                     ),
                     0,
                 )
-            with patch("eii.cli.safety_trust.verify_signed_safety_case_document"):
+            with patch("eii.cli_learning.safety_trust.verify_signed_safety_case_document"):
                 self.assertEqual(
                     main(
                         [
@@ -561,10 +566,10 @@ class CliDefensiveTests(unittest.TestCase):
                     ]
                 )
             with (
-                patch("eii.cli.safety_trust.validate_safety_case_document"),
-                patch("eii.cli.safety_trust.authorize_safety_case"),
+                patch("eii.cli_learning.safety_trust.validate_safety_case_document"),
+                patch("eii.cli_learning.safety_trust.authorize_safety_case"),
                 patch(
-                    "eii.cli.create_package",
+                    "eii.cli_appliance.create_package",
                     return_value=SimpleNamespace(package_id="p", version="1"),
                 ),
             ):

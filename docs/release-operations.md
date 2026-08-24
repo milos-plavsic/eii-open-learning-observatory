@@ -14,7 +14,9 @@ published assets are the output of verification, never its input.
    wheel, sdist, checksums, SBOM, revision, and version binding.
 6. Run **Promote exact release candidate** through the protected
    `production-release` environment. It re-verifies provenance and source digest,
-   signs the exact candidate and stores approved bytes without creating a tag.
+   emits `APPROVAL.json` containing the candidate run, actor, protected
+   environment, approval run, checked artifact hashes and revision, binds that
+   record into the signed manifest, and stores approved bytes without a tag.
 7. Run **Publish approved release** through the separately protected
    `production-publish` environment. Only then create the release tag
    `v<producer-version>`. The tag is a locator;
@@ -60,7 +62,8 @@ Build with a fixed `SOURCE_DATE_EPOCH`. Generate SPDX evidence, checksums, and
 provenance binding revision, source-archive digest, workflow, runner, tool versions,
 and artifacts.
 Sign the canonical release manifest—which binds checksums, release evidence,
-SBOM, project, version and revision—with the release publisher key and verify it
+SBOM, machine-generated promotion approval, project, version and revision—with
+the release publisher key and verify it
 before publication:
 
 ```bash
@@ -76,12 +79,29 @@ candidate` workflow accepts only a successful `Release candidate` run from
 `main`, downloads its exact retained artifact, verifies both SLSA and SPDX
 attestations against the exact workflow identity, source digest and `main` ref,
 checks its embedded revision, version and independently recomputed Git-archive
-digest, signs the complete manifest inside the protected `production-release`
-environment, verifies it, and uploads immutable approved bytes. Configure required reviewers plus
+digest, writes machine-verifiable approval evidence containing hashes of the
+actual candidate-resolution, source-binding, provenance, SBOM, and release-verification
+receipts, copies those receipts into the approved artifact, validates their structured
+content and exact hashes, and signs the complete manifest including every receipt and
+that evidence inside the protected `production-release` environment. The provenance
+and SBOM receipts are the JSON verification results emitted by
+`gh attestation verify --format=json`; validation requires the expected predicate,
+verified certificate/timestamp material, and coverage of every release artifact digest.
+The workflow then verifies the result and uploads immutable approved bytes. Configure required reviewers plus
 `EII_RELEASE_PRIVATE_KEY_PEM` and `EII_RELEASE_PUBLIC_KEY_PEM` in that environment.
-The separate `Publish approved release` workflow re-verifies the signed bytes,
+The separate `Publish approved release` workflow requires its actor to differ
+from the recorded promotion actor, re-verifies the signed bytes,
 requires `main` still to equal the approved revision, then atomically creates the
 tag and public release inside `production-publish`.
+
+The publication workflow rejects the promotion actor as publisher, providing a
+machine-enforced two-person release boundary. Until VAL-010 closes, maintainer
+succession, independent control of two accounts, and signing-key succession remain
+explicit governance gaps.
+The record conforms to the immutable
+[`release-approval-1.0`](https://eii.edu.eu/schemas/release-approval-1.0.json)
+schema and is verified against `release-evidence.json` before signing and again
+before publication.
 
 PEM secrets are the portable baseline. Mature deployments should replace them with
 OIDC-authorized KMS/HSM signing or an equivalently audited keyless workflow; a private

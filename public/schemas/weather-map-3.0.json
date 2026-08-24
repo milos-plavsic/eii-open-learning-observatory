@@ -112,7 +112,10 @@
           "const": "sha256-exact-serialized-bytes"
         },
         "cell_selection_privacy": {
-          "const": "exact-k-threshold-not-end-to-end-dp"
+          "enum": [
+            "exact-k-threshold-not-end-to-end-dp",
+            "fixed-public-universe-end-to-end-central-dp"
+          ]
         }
       }
     },

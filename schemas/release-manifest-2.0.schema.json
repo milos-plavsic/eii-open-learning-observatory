@@ -17,7 +17,12 @@
       "properties": {
         "SHA256SUMS": {"$ref": "#/$defs/file"},
         "release-evidence.json": {"$ref": "#/$defs/file"},
-        "sbom.spdx.json": {"$ref": "#/$defs/file"}
+        "sbom.spdx.json": {"$ref": "#/$defs/file"},
+        "APPROVAL.json": {"$ref": "#/$defs/file"}
+      },
+      "patternProperties": {
+        "^approval-receipts/(candidate-workflow-success|main-branch-revision-bound|artifact-version-binding)\\.json$": {"$ref": "#/$defs/file"},
+        "^approval-receipts/(artifact-build-provenance|artifact-sbom-attestation)\\.json$": {"$ref": "#/$defs/file"}
       }
     }
   },

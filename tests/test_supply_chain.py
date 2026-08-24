@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from eii.release_preflight import write_approval_evidence
 from eii.supply_chain import (
     artifact_kind,
     build_release_evidence,
@@ -15,6 +16,7 @@ from eii.supply_chain import (
     runtime_components,
     sha256_file,
     sign_release_evidence,
+    verify_approval_evidence,
     verify_release_evidence,
     verify_signed_release,
     verify_spdx_document,
@@ -38,13 +40,69 @@ class SupplyChainTests(unittest.TestCase):
             write_release_evidence(
                 build_release_evidence(
                     (wheel,),
-                    project="p",
+                    project="eii-observatory",
                     version="1",
                     revision="r",
                     source_digest="sha256:" + "a" * 64,
                 ),
                 evidence,
             )
+            candidate = root / "candidate.json"
+            candidate.write_text(
+                json.dumps(
+                    {
+                        "id": 1,
+                        "conclusion": "success",
+                        "name": "Release candidate",
+                        "head_branch": "main",
+                        "head_sha": "r",
+                    }
+                )
+            )
+            binding = root / "binding.json"
+            binding.write_text(
+                json.dumps({"revision": "r", "source_digest": "sha256:" + "a" * 64, "version": "1"})
+            )
+
+            def attestation(predicate_type):
+                return [
+                    {
+                        "verificationResult": {
+                            "statement": {
+                                "predicateType": predicate_type,
+                                "subject": [{"digest": {"sha256": sha256_file(wheel)}}],
+                            },
+                            "verifiedTimestamps": [{}],
+                            "signature": {"certificate": {}},
+                        }
+                    }
+                ]
+
+            provenance = root / "provenance.json"
+            provenance.write_text(json.dumps(attestation("https://slsa.dev/provenance/v1")))
+            sbom_receipt = root / "sbom-receipt.json"
+            sbom_receipt.write_text(json.dumps(attestation("https://spdx.dev/Document/v2.3")))
+            receipts = {
+                "candidate-workflow-success": candidate,
+                "main-branch-revision-bound": binding,
+                "artifact-version-binding": binding,
+                "artifact-build-provenance": provenance,
+                "artifact-sbom-attestation": sbom_receipt,
+            }
+            write_approval_evidence(
+                evidence / "APPROVAL.json",
+                (wheel,),
+                version="1",
+                revision="r",
+                candidate_run_id="1",
+                approval_run_id="2",
+                repository="eii/repo",
+                actor="reviewer",
+                environment="production-release",
+                run_url="https://example.test/runs/2",
+                receipts=receipts,
+            )
+            approval = json.loads((evidence / "APPROVAL.json").read_text())
             private = root / "private.pem"
             public = root / "public.pem"
             subprocess.run(
@@ -55,8 +113,83 @@ class SupplyChainTests(unittest.TestCase):
             )
             signature_path = sign_release_evidence(evidence, private, public)
             verify_signed_release(evidence, root, public)
+            original_evidence = (evidence / "release-evidence.json").read_text()
+            (evidence / "APPROVAL.json").unlink()
+            sign_release_evidence(evidence, private, public)
+            verify_signed_release(evidence, root, public)
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
+            signature_path = sign_release_evidence(evidence, private, public)
+            approval["checks"] = []
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
+            with self.assertRaisesRegex(ValueError, "checks"):
+                verify_approval_evidence(evidence / "APPROVAL.json", json.loads(original_evidence))
+            approval["checks"] = [
+                "candidate-workflow-success",
+                "main-branch-revision-bound",
+                "artifact-version-binding",
+                "artifact-build-provenance",
+                "artifact-sbom-attestation",
+            ]
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
+            for mutation, message in (
+                ({**approval, "extra": True}, "invalid"),
+                ({**approval, "revision": "wrong"}, "identity"),
+                ({**approval, "actor": 1}, "metadata"),
+                ({**approval, "run_url": "http://example.test"}, "metadata"),
+                ({**approval, "receipts": {}}, "receipts"),
+                ({**approval, "artifacts": []}, "artifacts are invalid"),
+                ({**approval, "artifacts": {}}, "do not match"),
+            ):
+                (evidence / "APPROVAL.json").write_text(json.dumps(mutation))
+                with self.assertRaisesRegex(ValueError, message):
+                    verify_approval_evidence(
+                        evidence / "APPROVAL.json", json.loads(original_evidence)
+                    )
+            invalid_receipt = json.loads(json.dumps(approval))
+            invalid_receipt["receipts"]["artifact-build-provenance"]["size"] = 0
+            (evidence / "APPROVAL.json").write_text(json.dumps(invalid_receipt))
+            with self.assertRaisesRegex(ValueError, "receipt is invalid"):
+                verify_approval_evidence(evidence / "APPROVAL.json", json.loads(original_evidence))
+
+            def refresh_approval() -> dict:
+                write_approval_evidence(
+                    evidence / "APPROVAL.json",
+                    (wheel,),
+                    version="1",
+                    revision="r",
+                    candidate_run_id="1",
+                    approval_run_id="2",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/2",
+                    receipts=receipts,
+                )
+                return json.loads((evidence / "APPROVAL.json").read_text())
+
+            approval = refresh_approval()
+            copied_candidate = evidence / approval["receipts"]["candidate-workflow-success"]["path"]
+            copied_candidate.write_text("{}")
+            approval["receipts"]["candidate-workflow-success"].update(
+                sha256="sha256:" + sha256_file(copied_candidate),
+                size=copied_candidate.stat().st_size,
+            )
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
+            with self.assertRaisesRegex(ValueError, "workflow receipt content"):
+                verify_approval_evidence(evidence / "APPROVAL.json", json.loads(original_evidence))
+
+            approval = refresh_approval()
+            copied_binding = evidence / approval["receipts"]["main-branch-revision-bound"]["path"]
+            copied_binding.write_text("{}")
+            approval["receipts"]["main-branch-revision-bound"].update(
+                sha256="sha256:" + sha256_file(copied_binding), size=copied_binding.stat().st_size
+            )
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
+            with self.assertRaisesRegex(ValueError, "binding receipt content"):
+                verify_approval_evidence(evidence / "APPROVAL.json", json.loads(original_evidence))
+            approval = refresh_approval()
+            (evidence / "APPROVAL.json").write_text(json.dumps(approval))
             evidence_path = evidence / "release-evidence.json"
-            original_evidence = evidence_path.read_text()
             tampered_evidence = json.loads(original_evidence)
             tampered_evidence["revision"] = "attacker"
             evidence_path.write_text(json.dumps(tampered_evidence))
@@ -70,7 +203,7 @@ class SupplyChainTests(unittest.TestCase):
                 verify_signed_release(evidence, root, public)
             sbom_path.write_text(original_sbom)
             with (
-                patch("eii.supply_chain.verify_ed25519", return_value=False),
+                patch("eii.release_signing.verify_ed25519", return_value=False),
                 self.assertRaisesRegex(ValueError, "do not match"),
             ):
                 sign_release_evidence(evidence, private, public)
@@ -101,7 +234,7 @@ class SupplyChainTests(unittest.TestCase):
             manifest["schema_version"] = "wrong"
             manifest_path.write_text(json.dumps(manifest))
             with (
-                patch("eii.supply_chain.verify_ed25519", return_value=True),
+                patch("eii.release_signing.verify_ed25519", return_value=True),
                 self.assertRaisesRegex(ValueError, "manifest is invalid"),
             ):
                 verify_signed_release(evidence, root, public)
@@ -109,15 +242,35 @@ class SupplyChainTests(unittest.TestCase):
             manifest["files"].pop("sbom.spdx.json")
             manifest_path.write_text(json.dumps(manifest))
             with (
-                patch("eii.supply_chain.verify_ed25519", return_value=True),
+                patch("eii.release_signing.verify_ed25519", return_value=True),
                 self.assertRaisesRegex(ValueError, "file set"),
+            ):
+                verify_signed_release(evidence, root, public)
+            manifest = json.loads(original_manifest)
+            manifest["files"].pop("APPROVAL.json")
+            manifest_path.write_text(json.dumps(manifest))
+            with (
+                patch("eii.release_signing.verify_ed25519", return_value=True),
+                self.assertRaisesRegex(ValueError, "file set is invalid"),
+            ):
+                verify_signed_release(evidence, root, public)
+            manifest = json.loads(original_manifest)
+            manifest["files"] = {
+                name: record
+                for name, record in manifest["files"].items()
+                if not name.startswith("approval-receipts/")
+            }
+            manifest_path.write_text(json.dumps(manifest))
+            with (
+                patch("eii.release_signing.verify_ed25519", return_value=True),
+                self.assertRaisesRegex(ValueError, "receipt file set"),
             ):
                 verify_signed_release(evidence, root, public)
             manifest = json.loads(original_manifest)
             manifest["revision"] = "wrong"
             manifest_path.write_text(json.dumps(manifest))
             with (
-                patch("eii.supply_chain.verify_ed25519", return_value=True),
+                patch("eii.release_signing.verify_ed25519", return_value=True),
                 self.assertRaisesRegex(ValueError, "identity"),
             ):
                 verify_signed_release(evidence, root, public)
@@ -130,7 +283,7 @@ class SupplyChainTests(unittest.TestCase):
             }
             manifest_path.write_text(json.dumps(manifest))
             with (
-                patch("eii.supply_chain.verify_ed25519", return_value=True),
+                patch("eii.release_signing.verify_ed25519", return_value=True),
                 self.assertRaisesRegex(ValueError, "SBOM"),
             ):
                 verify_signed_release(evidence, root, public)

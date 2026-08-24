@@ -16,6 +16,18 @@ from .secureio import require_private_file
 
 SIGNATURE_PREFIX = "ed25519:"
 OPENSSL = shutil.which("openssl")
+_SELF_TEST_PAYLOAD = b"EII OpenSSL Ed25519 self-test v1"
+_SELF_TEST_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIBQjXMacxw4wTXCFh4yub+tVH+N4EVuU6GDNOs7I2kCP
+-----END PRIVATE KEY-----
+"""
+_SELF_TEST_PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAS4vtWiHrL0XSfzO65IEs3t4qXXmpiCpsEpUSUW5V7nk=
+-----END PUBLIC KEY-----
+"""
+_SELF_TEST_SIGNATURE = base64.b64decode(
+    "RCdfVQQ7z0MaVEvtL22TEee1UgV8JbYLGIfgQ4c1u54JeAUoYJKoQncqXENzWtduddSnEjN5tZBy4QD72Am3Bg=="
+)
 
 
 class CryptoError(ValueError):
@@ -56,6 +68,54 @@ def _probe_openssl(executable: str) -> str:
 def openssl_version() -> str:
     """Return the validated OpenSSL runtime identity or fail closed."""
     return _probe_openssl(_openssl_path())
+
+
+@cache
+def crypto_self_test() -> None:
+    """Fail closed unless OpenSSL reproduces and verifies a fixed Ed25519 vector."""
+    executable = _openssl_path()
+    _probe_openssl(executable)
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        private_key, public_key = root / "private.pem", root / "public.pem"
+        payload, signature = root / "payload", root / "signature"
+        private_key.write_text(_SELF_TEST_PRIVATE_KEY, "ascii")
+        public_key.write_text(_SELF_TEST_PUBLIC_KEY, "ascii")
+        payload.write_bytes(_SELF_TEST_PAYLOAD)
+        signature.write_bytes(_SELF_TEST_SIGNATURE)
+        signed = subprocess.run(
+            [
+                executable,
+                "pkeyutl",
+                "-sign",
+                "-rawin",
+                "-inkey",
+                str(private_key),
+                "-in",
+                str(payload),
+            ],
+            capture_output=True,
+            check=False,
+        )  # nosec B603
+        verified = subprocess.run(
+            [
+                executable,
+                "pkeyutl",
+                "-verify",
+                "-rawin",
+                "-pubin",
+                "-inkey",
+                str(public_key),
+                "-in",
+                str(payload),
+                "-sigfile",
+                str(signature),
+            ],
+            capture_output=True,
+            check=False,
+        )  # nosec B603
+    if signed.returncode or signed.stdout != _SELF_TEST_SIGNATURE or verified.returncode:
+        raise CryptoError("OpenSSL Ed25519 behavioral self-test failed")
 
 
 def _openssl() -> str:

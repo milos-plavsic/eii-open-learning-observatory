@@ -29,10 +29,11 @@ release, not independent certification or evidence of educational effectiveness.
 
 - Artifact verification authenticates the complete append-only HMAC chain instead of
   trusting the mutable latest-export index.
-- Weather CLI operation requires a separate durable ledger-key file; privacy-key
-  rotation rejects an implicitly shared ledger key.
+- Weather CLI operation requires a separate durable ledger-key file and stable
+  deployment database identity; privacy-key rotation rejects an implicitly shared
+  ledger key.
 - Consensus, alignment, glossary, privacy, recovery, schema, migration, malformed-input,
-  and adversarial tests expand the suite to 255 tests, 6,109 statements, 1,924 branches,
+  and adversarial tests expand the suite to 271 tests, 6,612 statements, 2,040 branches,
   and 24 critical mutation probes, all passing their configured gates.
 
 ## [0.1.0] - 2026-08-24

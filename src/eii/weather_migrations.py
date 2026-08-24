@@ -104,4 +104,22 @@ CREATE TABLE IF NOT EXISTS privacy_publication_journal (
 ALTER TABLE privacy_publication_journal ADD COLUMN strategy TEXT NOT NULL DEFAULT 'global';
 ALTER TABLE privacy_publication_journal ADD COLUMN prior_hash TEXT;
 """,
+    """
+CREATE TABLE IF NOT EXISTS privacy_database_lineage (
+  id INTEGER PRIMARY KEY CHECK (id=1), instance_id TEXT UNIQUE NOT NULL,
+  parent_instance_id TEXT, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS privacy_database_lineage_history (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT NOT NULL,
+  parent_instance_id TEXT, recorded_at TEXT NOT NULL
+);
+CREATE TRIGGER privacy_database_lineage_history_no_update
+BEFORE UPDATE ON privacy_database_lineage_history BEGIN
+  SELECT RAISE(ABORT, 'database lineage history is append-only');
+END;
+CREATE TRIGGER privacy_database_lineage_history_no_delete
+BEFORE DELETE ON privacy_database_lineage_history BEGIN
+  SELECT RAISE(ABORT, 'database lineage history is append-only');
+END;
+""",
 )

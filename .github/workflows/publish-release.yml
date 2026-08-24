@@ -36,6 +36,13 @@ jobs:
           path: approved
           run-id: ${{ inputs.promotion_run_id }}
           github-token: ${{ github.token }}
+      - name: Enforce independent promotion and publication actors
+        env:
+          PUBLISHER: ${{ github.actor }}
+        run: |
+          APPROVER=$(python -c 'import json; print(json.load(open("approved/APPROVAL.json"))["actor"])')
+          test -n "$APPROVER"
+          test "$APPROVER" != "$PUBLISHER"
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"

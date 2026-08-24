@@ -37,7 +37,7 @@ class PersistenceTests(unittest.TestCase):
             ) as weather:
                 status = weather.status()
                 self.assertEqual(
-                    (status.kind, status.schema_version, status.integrity), ("weather", 8, "ok")
+                    (status.kind, status.schema_version, status.integrity), ("weather", 9, "ok")
                 )
                 self.assertEqual(
                     weather.connection.execute("PRAGMA busy_timeout").fetchone()[0], 5000

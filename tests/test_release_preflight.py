@@ -1,4 +1,6 @@
+import hashlib
 import io
+import json
 import subprocess
 import tarfile
 import tempfile
@@ -11,11 +13,291 @@ from eii import __version__
 from eii.release_preflight import (
     artifact_version,
     require_clean_source_tree,
+    validate_attestation_receipt,
     validate_release_candidate,
+    write_approval_evidence,
 )
 
 
 class ReleasePreflightTests(unittest.TestCase):
+    def test_attestation_receipt_validation_is_fail_closed(self):
+        predicate = "https://slsa.dev/provenance/v1"
+        digest = "a" * 64
+
+        def receipt():
+            return [
+                {
+                    "verificationResult": {
+                        "statement": {
+                            "predicateType": predicate,
+                            "subject": [{"digest": {"sha256": digest}}],
+                        },
+                        "verifiedTimestamps": [{}],
+                        "signature": {"certificate": {}},
+                    }
+                }
+            ]
+
+        validate_attestation_receipt(receipt(), predicate_type=predicate, artifact_hashes={digest})
+        for malformed in ({}, [], [None], [{"verificationResult": None}]):
+            with self.assertRaisesRegex(ValueError, "verified results|result is invalid"):
+                validate_attestation_receipt(
+                    malformed, predicate_type=predicate, artifact_hashes={digest}
+                )
+
+        for mutate in (
+            lambda item: item["verificationResult"].pop("statement"),
+            lambda item: item["verificationResult"]["statement"].update(
+                {"predicateType": "unexpected"}
+            ),
+            lambda item: item["verificationResult"]["statement"].update({"subject": {}}),
+            lambda item: item["verificationResult"].update({"verifiedTimestamps": []}),
+            lambda item: item["verificationResult"].update({"signature": None}),
+            lambda item: item["verificationResult"]["signature"].update({"certificate": None}),
+        ):
+            document = receipt()
+            mutate(document[0])
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                validate_attestation_receipt(
+                    document, predicate_type=predicate, artifact_hashes={digest}
+                )
+
+        for subject in (None, {"digest": None}, {"digest": {"sha256": None}}):
+            document = receipt()
+            document[0]["verificationResult"]["statement"]["subject"] = [
+                subject,
+                {"digest": {"sha256": digest}},
+            ]
+            validate_attestation_receipt(
+                document, predicate_type=predicate, artifact_hashes={digest}
+            )
+        with self.assertRaisesRegex(ValueError, "does not cover"):
+            validate_attestation_receipt(
+                receipt(), predicate_type=predicate, artifact_hashes={"b" * 64}
+            )
+
+    def test_writes_bound_machine_approval_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = self.artifacts(root)
+            output = root / "APPROVAL.json"
+            candidate = root / "candidate.json"
+            candidate.write_text(
+                json.dumps(
+                    {
+                        "id": 123,
+                        "conclusion": "success",
+                        "name": "Release candidate",
+                        "head_branch": "main",
+                        "head_sha": "a" * 40,
+                    }
+                )
+            )
+            binding = root / "binding.json"
+            binding.write_text(
+                json.dumps(
+                    {
+                        "revision": "a" * 40,
+                        "version": __version__,
+                        "source_digest": "sha256:" + "b" * 64,
+                    }
+                )
+            )
+
+            def attestation(predicate_type):
+                return [
+                    {
+                        "verificationResult": {
+                            "statement": {
+                                "predicateType": predicate_type,
+                                "subject": [
+                                    {
+                                        "digest": {
+                                            "sha256": hashlib.sha256(item.read_bytes()).hexdigest()
+                                        }
+                                    }
+                                    for item in artifacts
+                                ],
+                            },
+                            "verifiedTimestamps": [{}],
+                            "signature": {"certificate": {}},
+                        }
+                    }
+                ]
+
+            provenance = root / "provenance.json"
+            provenance.write_text(json.dumps(attestation("https://slsa.dev/provenance/v1")))
+            sbom = root / "sbom.json"
+            sbom.write_text(json.dumps(attestation("https://spdx.dev/Document/v2.3")))
+            receipts = {
+                "candidate-workflow-success": candidate,
+                "main-branch-revision-bound": binding,
+                "artifact-version-binding": binding,
+                "artifact-build-provenance": provenance,
+                "artifact-sbom-attestation": sbom,
+            }
+            write_approval_evidence(
+                output,
+                artifacts,
+                version=__version__,
+                revision="a" * 40,
+                candidate_run_id="123",
+                approval_run_id="456",
+                repository="eii/repo",
+                actor="reviewer",
+                environment="production-release",
+                run_url="https://example.test/runs/456",
+                receipts=receipts,
+            )
+            document = json.loads(output.read_text())
+            self.assertEqual(document["actor"], "reviewer")
+            self.assertEqual(set(document["artifacts"]), {item.name for item in artifacts})
+            self.assertEqual(
+                set((root / "approval-receipts").iterdir()),
+                {
+                    root / "approval-receipts" / f"{name}.json"
+                    for name, record in document["receipts"].items()
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "metadata"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="",
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            with self.assertRaisesRegex(ValueError, "unique"):
+                write_approval_evidence(
+                    output,
+                    (artifacts[0], artifacts[0]),
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            with self.assertRaisesRegex(ValueError, "every verified check"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts={},
+                )
+            provenance.write_bytes(b"")
+            with self.assertRaisesRegex(ValueError, "empty"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            provenance.write_text(json.dumps(attestation("https://slsa.dev/provenance/v1")))
+            candidate.write_text("not-json")
+            with self.assertRaisesRegex(ValueError, "valid JSON"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            candidate.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "requested run"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            candidate.write_text(
+                json.dumps(
+                    {
+                        "id": 123,
+                        "conclusion": "success",
+                        "name": "Release candidate",
+                        "head_branch": "main",
+                        "head_sha": "a" * 40,
+                    }
+                )
+            )
+            binding.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "source binding"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+            binding.write_text(
+                json.dumps(
+                    {
+                        "revision": "a" * 40,
+                        "version": __version__,
+                        "source_digest": "sha256:" + "b" * 64,
+                    }
+                )
+            )
+            provenance.write_text("[]")
+            with self.assertRaisesRegex(ValueError, "verified results"):
+                write_approval_evidence(
+                    output,
+                    artifacts,
+                    version=__version__,
+                    revision="a" * 40,
+                    candidate_run_id="123",
+                    approval_run_id="456",
+                    repository="eii/repo",
+                    actor="reviewer",
+                    environment="production-release",
+                    run_url="https://example.test/runs/456",
+                    receipts=receipts,
+                )
+
     def test_source_tree_must_be_clean_and_match_revision(self):
         clean = subprocess.CompletedProcess([], 0, stdout="abc\n", stderr="")
         status = subprocess.CompletedProcess([], 0, stdout="", stderr="")

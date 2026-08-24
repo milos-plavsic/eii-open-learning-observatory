@@ -183,8 +183,12 @@ python -m eii safety-review-sign unsigned-review.json \
 python -m eii weather-key-generate --output weather.key
 python -m eii weather-key-generate --output weather-ledger.key
 python -m eii weather events.json --database weather.sqlite \
+  --database-instance-id school-production-primary \
   --secret-file weather.key --ledger-key-file weather-ledger.key \
   --output weather-map.json
+
+# Add --public-cell-universe cells.json for the fixed-universe central-DP mode.
+# Independent privacy review remains required before a learner-data deployment.
 
 # Offline appliance lifecycle
 python -m eii appliance-check
@@ -206,8 +210,12 @@ See [docs/architecture.md](docs/architecture.md) and
 procedures are in [docs/database-operations.md](docs/database-operations.md).
 Production operators should also read [docs/observability.md](docs/observability.md),
 [docs/migrations-and-upgrades.md](docs/migrations-and-upgrades.md),
+[docs/weather-dp-deployment.md](docs/weather-dp-deployment.md),
+[docs/release-operations.md](docs/release-operations.md),
 [docs/key-management.md](docs/key-management.md), and
-[docs/incident-response.md](docs/incident-response.md). Security reports follow
+[docs/incident-response.md](docs/incident-response.md). The
+[external-validation commitments](docs/validation-commitments.md) track every
+claim that still needs outside evidence. Security reports follow
 [SECURITY.md](SECURITY.md); compatibility support follows [SUPPORT.md](SUPPORT.md).
 
 Formal interchange schemas are under [`schemas/`](schemas/). Course-content

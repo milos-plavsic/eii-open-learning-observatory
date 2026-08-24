@@ -15,3 +15,4 @@ release-candidate/
 htmlcov/
 eii-report/
 eii-mri-report/
+.hypothesis/

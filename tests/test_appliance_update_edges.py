@@ -76,7 +76,10 @@ class ApplianceUpdateEdgeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "private key is missing"):
                 _ed25519_sign(b"x", missing)
             process = MagicMock(returncode=1, stderr=b"bad", stdout=b"")
-            with patch("eii.crypto.subprocess.run", return_value=process):
+            with (
+                patch("eii.crypto._probe_openssl", return_value="OpenSSL 3.0.0"),
+                patch("eii.crypto.subprocess.run", return_value=process),
+            ):
                 with self.assertRaisesRegex(ValueError, "signing failed"):
                     _ed25519_sign(b"x", fake)
                 with self.assertRaisesRegex(ValueError, "invalid Ed25519"):
@@ -215,12 +218,12 @@ class ApplianceUpdateEdgeTests(unittest.TestCase):
             document["statement"]["old_fingerprint"] = "old"
             authorization.write_text(json.dumps(document))
             (trust / "keys/old.pem").write_text("old")
-            with patch("eii.appliance._ed25519_verify", return_value=False):
+            with patch("eii.appliance_trust.verify_ed25519", return_value=False):
                 with self.assertRaisesRegex(ValueError, "rotation signature"):
                     apply_trust_rotation(root, authorization)
             with (
-                patch("eii.appliance._ed25519_verify", return_value=True),
-                patch("eii.appliance.public_key_fingerprint", return_value="different"),
+                patch("eii.appliance_trust.verify_ed25519", return_value=True),
+                patch("eii.appliance_trust.public_key_fingerprint", return_value="different"),
             ):
                 with self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
                     apply_trust_rotation(root, authorization)

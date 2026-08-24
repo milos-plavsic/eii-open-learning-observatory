@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from html import escape
 from pathlib import Path
 
 from .persistence import DatabaseStatus, backup_database, connect_database, database_status
 from .weather_dp import DifferentialPrivacyReceipt, release_counts, validate_policy
+from .weather_lineage import bind_database_lineage
+from .weather_lock import synchronized as _synchronized
 from .weather_migrations import WEATHER_MIGRATIONS
 from .weather_privacy import (
     authorize_export,
@@ -20,8 +22,15 @@ from .weather_privacy import (
     verify_export_ledger,
 )
 from .weather_publication import publish_artifact, recover_publications
+from .weather_rendering import html_artifact, json_artifact, privacy_metadata
 from .weather_types import MinimizedEvent, Signal, WeatherCell
 from .weather_types import load_events as load_events
+from .weather_universe import (
+    PublicCell,
+    aggregate_public_universe,
+    aggregate_thresholded,
+)
+from .weather_universe import load_public_cell_universe as load_public_cell_universe
 
 _RECOMMENDATIONS = {
     Signal.MISCONCEPTION: "Add a contrasting example and a diagnostic question.",
@@ -51,6 +60,10 @@ class WeatherStore:
         ledger_key: bytes | None = None,
         dp_epsilon: float = 1.0,
         dp_total_epsilon: float = 10.0,
+        public_cell_universe: frozenset[PublicCell] | None = None,
+        max_cells_per_contributor_per_day: int = 3,
+        database_instance_id: str | None = None,
+        allow_database_fork: bool = False,
     ):
         if len(secret) < 32:
             raise ValueError("weather secret must contain at least 32 bytes")
@@ -60,6 +73,10 @@ class WeatherStore:
             raise ValueError("retention must be positive")
         if max_events_per_contributor_per_cell < 1:
             raise ValueError("contribution bound must be positive")
+        if max_cells_per_contributor_per_day < 1:
+            raise ValueError("contributor cell bound must be positive")
+        if public_cell_universe is not None and not public_cell_universe:
+            raise ValueError("public cell universe cannot be empty")
         if count_granularity < 1 or minimum_export_interval_hours < 1:
             raise ValueError("count granularity and export interval must be positive")
         validate_policy(dp_epsilon, dp_total_epsilon)
@@ -76,17 +93,25 @@ class WeatherStore:
             raise ValueError("weather ledger key must contain at least 32 bytes")
         self.minimum_group_size, self.retention_days = minimum_group_size, retention_days
         self.max_events_per_contributor_per_cell = max_events_per_contributor_per_cell
+        self.public_cell_universe = public_cell_universe
+        self.max_cells_per_contributor_per_day = max_cells_per_contributor_per_day
         self.count_granularity = count_granularity
         self.minimum_export_interval_hours = minimum_export_interval_hours
         self.key_epoch = key_epoch
         self.dp_epsilon, self.dp_total_epsilon = dp_epsilon, dp_total_epsilon
-        self.connection = connect_database(path, kind="weather", migrations=WEATHER_MIGRATIONS)
+        self._lock = threading.RLock()
+        self.connection = connect_database(
+            path, kind="weather", migrations=WEATHER_MIGRATIONS, check_same_thread=False
+        )
         try:
             configured_budget = self.connection.execute(
                 "SELECT epsilon_limit FROM dp_budget WHERE id=1"
             ).fetchone()
             if configured_budget and configured_budget[0] != self.dp_total_epsilon:
                 raise ValueError("differential-privacy budget limit is immutable for this database")
+            self.database_instance_id = bind_database_lineage(
+                self.connection, database_instance_id, allow_database_fork=allow_database_fork
+            )
             bind_key_epoch(self.connection, secret=self.secret, epoch=self.key_epoch)
             bind_ledger_key(self.connection, ledger_key=self.ledger_key)
             verify_export_ledger(self.connection, ledger_key=self.ledger_key)
@@ -99,15 +124,19 @@ class WeatherStore:
             self.connection.close()
             raise
 
+    @_synchronized
     def close(self) -> None:
         self.connection.close()
 
+    @_synchronized
     def status(self) -> DatabaseStatus:
         return database_status(self.connection, kind="weather")
 
+    @_synchronized
     def backup(self, destination: Path) -> None:
         backup_database(self.connection, destination)
 
+    @_synchronized
     def rotate_privacy_key(self, *, new_secret: bytes, new_epoch: str) -> int:
         if len(new_secret) < 32:
             raise ValueError("weather secret must contain at least 32 bytes")
@@ -119,9 +148,11 @@ class WeatherStore:
         self.secret, self.key_epoch = new_secret, new_epoch
         return purged
 
+    @_synchronized
     def verify_export_ledger(self) -> str | None:
         return verify_export_ledger(self.connection, ledger_key=self.ledger_key)
 
+    @_synchronized
     def verify_export_artifact(
         self, artifact: Path, *, artifact_kind: str, course_key: str | None = None
     ) -> None:
@@ -142,21 +173,26 @@ class WeatherStore:
     def __exit__(self, *_: object) -> None:
         self.close()
 
+    @_synchronized
     def ingest(self, event: MinimizedEvent) -> None:
         # Tokens are keyed and hashed immediately; the input value is never persisted.
         occurred_day = datetime.fromisoformat(event.occurred_at).astimezone(UTC).date().isoformat()
-        linkage_scope = "\x1f".join(
-            (
-                self.key_epoch,
-                occurred_day,
-                event.course_key,
-                event.activity_key,
-                event.language,
-                event.concept_id,
-                event.signal.value,
-                event.contribution_token,
-            )
+        cell = (
+            event.course_key,
+            event.activity_key,
+            event.language,
+            event.concept_id,
+            event.signal,
         )
+        if self.public_cell_universe is not None and cell not in self.public_cell_universe:
+            raise ValueError("event cell is outside the declared public universe")
+        linkage_parts = [self.key_epoch, occurred_day, event.course_key]
+        if self.public_cell_universe is None:
+            linkage_parts.extend(
+                (event.activity_key, event.language, event.concept_id, event.signal.value)
+            )
+        linkage_parts.append(event.contribution_token)
+        linkage_scope = "\x1f".join(linkage_parts)
         contributor_hash = hashlib.blake2b(
             linkage_scope.encode(), key=self.secret, digest_size=16
         ).hexdigest()
@@ -176,6 +212,15 @@ class WeatherStore:
         ).fetchone()[0]
         if existing >= self.max_events_per_contributor_per_cell:
             return
+        if self.public_cell_universe is not None:
+            cells = self.connection.execute(
+                """SELECT COUNT(*) FROM (SELECT DISTINCT activity_key,language,concept_id,signal
+                FROM events WHERE contributor_hash=? AND occurred_at=? AND course_key=?)""",
+                (contributor_hash, occurred_day, event.course_key),
+            ).fetchone()[0]
+            current_exists = existing > 0
+            if not current_exists and cells >= self.max_cells_per_contributor_per_day:
+                return
         self.connection.execute(
             "INSERT INTO events VALUES (?,?,?,?,?,?,?)",
             (
@@ -190,6 +235,7 @@ class WeatherStore:
         )
         self.connection.commit()
 
+    @_synchronized
     def purge_expired(self, *, now: datetime | None = None) -> int:
         now = now or datetime.now(UTC)
         cutoff = (now - timedelta(days=self.retention_days)).isoformat()
@@ -197,39 +243,24 @@ class WeatherStore:
         self.connection.commit()
         return cursor.rowcount
 
+    @_synchronized
     def aggregate(self, *, course_key: str | None = None) -> tuple[WeatherCell, ...]:
-        if course_key:
-            rows = self.connection.execute(
-                """SELECT course_key, activity_key, language, concept_id,
-                signal, COUNT(*), COUNT(DISTINCT contributor_hash) FROM events
-                WHERE course_key = ?
-                GROUP BY course_key, activity_key, language, concept_id, signal
-                HAVING COUNT(DISTINCT contributor_hash) >= ? ORDER BY COUNT(*) DESC""",
-                (course_key, self.minimum_group_size),
-            ).fetchall()
-        else:
-            rows = self.connection.execute(
-                """SELECT course_key, activity_key, language, concept_id,
-                signal, COUNT(*), COUNT(DISTINCT contributor_hash) FROM events
-                GROUP BY course_key, activity_key, language, concept_id, signal
-                HAVING COUNT(DISTINCT contributor_hash) >= ? ORDER BY COUNT(*) DESC""",
-                (self.minimum_group_size,),
-            ).fetchall()
-        return tuple(
-            WeatherCell(
-                row[0],
-                row[1],
-                row[2],
-                row[3],
-                Signal(row[4]),
-                row[5],
-                row[6],
-                f"{row[5]} minimized events from at least {row[6]} pseudonymous contributors.",
-                _RECOMMENDATIONS[Signal(row[4])],
-            )
-            for row in rows
+        if self.public_cell_universe is not None:
+            return self._aggregate_public_universe(course_key)
+        return aggregate_thresholded(
+            self.connection,
+            _RECOMMENDATIONS,
+            course_key=course_key,
+            minimum_group_size=self.minimum_group_size,
         )
 
+    def _aggregate_public_universe(self, course_key: str | None) -> tuple[WeatherCell, ...]:
+        assert self.public_cell_universe is not None
+        return aggregate_public_universe(
+            self.connection, self.public_cell_universe, _RECOMMENDATIONS, course_key
+        )
+
+    @_synchronized
     def export(
         self,
         destination: Path,
@@ -240,37 +271,21 @@ class WeatherStore:
         cells, receipt, snapshot_hash, exported_at = self._privacy_cells(
             course_key=course_key, now=now
         )
-        payload = {
-            "schema_version": "3.0",
-            "privacy": {
-                "minimum_group_size": self.minimum_group_size,
-                "retention_days": self.retention_days,
-                "max_events_per_contributor_per_cell_per_day": self.max_events_per_contributor_per_cell,
-                "timestamp_precision": "utc-day",
-                "raw_conversations_stored": False,
-                "direct_identifiers_stored": False,
-                "count_granularity": self.count_granularity,
-                "minimum_export_interval_hours": self.minimum_export_interval_hours,
-                "key_epoch": self.key_epoch,
-                "contribution_linkage": "within-cell-day-only-pseudonymous",
-                "mechanism": "central-laplace-differential-privacy",
-                "protected_unit": "bounded-contributor-cell-utc-day",
-                "epsilon_per_release": receipt.epsilon_per_release,
-                "epsilon_spent": receipt.epsilon_spent,
-                "epsilon_limit": receipt.epsilon_limit,
-                "composition": "basic-sequential",
-                "release_memoization": "scope-snapshot-policy-bound",
-                "event_count_sensitivity": self.max_events_per_contributor_per_cell,
-                "contributor_count_sensitivity": 1,
-                "artifact_ledger_binding": "sha256-exact-serialized-bytes",
-                "cell_selection_privacy": "exact-k-threshold-not-end-to-end-dp",
-            },
-            "cells": [asdict(cell) for cell in cells],
-        }
-        serialized = json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n"
+        fixed_universe = self.public_cell_universe is not None
+        privacy = privacy_metadata(
+            receipt,
+            minimum_group_size=self.minimum_group_size,
+            retention_days=self.retention_days,
+            per_cell_event_bound=self.max_events_per_contributor_per_cell,
+            maximum_cells=self.max_cells_per_contributor_per_day if fixed_universe else 1,
+            count_granularity=self.count_granularity,
+            minimum_export_interval_hours=self.minimum_export_interval_hours,
+            key_epoch=self.key_epoch,
+            fixed_public_universe=fixed_universe,
+        )
         self._publish_artifact(
             destination,
-            serialized.encode(),
+            json_artifact(cells, receipt, privacy),
             artifact_kind="json",
             course_key=course_key,
             snapshot_hash=snapshot_hash,
@@ -304,7 +319,16 @@ class WeatherStore:
             cells=[asdict(cell) for cell in cells],
             epsilon=self.dp_epsilon,
             epsilon_limit=self.dp_total_epsilon,
-            event_sensitivity=self.max_events_per_contributor_per_cell,
+            event_sensitivity=(
+                self.max_events_per_contributor_per_cell * self.max_cells_per_contributor_per_day
+                if self.public_cell_universe is not None
+                else self.max_events_per_contributor_per_cell
+            ),
+            contributor_sensitivity=(
+                self.max_cells_per_contributor_per_day
+                if self.public_cell_universe is not None
+                else 1
+            ),
         )
         private_cells = tuple(
             self._round_private_cell(WeatherCell(**{**cell, "signal": Signal(cell["signal"])}))
@@ -352,33 +376,18 @@ class WeatherStore:
             cell.recommendation,
         )
 
+    @_synchronized
     def export_html(self, destination: Path, *, course_key: str | None = None) -> None:
         cells, receipt, snapshot_hash, exported_at = self._privacy_cells(course_key=course_key)
-        rows = "".join(
-            f"<tr><td>{escape(cell.activity_key)}</td><td>{escape(cell.language)}</td>"
-            f"<td>{escape(cell.concept_id)}</td><td>{escape(cell.signal.value)}</td>"
-            f"<td>{cell.event_count}</td><td>{cell.contributor_count}</td>"
-            f"<td>{escape(cell.recommendation)}</td></tr>"
-            for cell in cells
-        )
-        if not rows:
-            rows = '<tr><td colspan="7">No groups meet the privacy threshold.</td></tr>'
-        html = f"""<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width"><title>Classroom Weather Map</title>
-<style>body{{font:16px system-ui;max-width:1200px;margin:auto;padding:2rem}}table{{border-collapse:collapse;width:100%}}
-th,td{{border:1px solid #ccd;padding:.55rem;text-align:left}}th{{background:#eef}}.privacy{{background:#eaf7ef;padding:1rem}}</style>
-<main><h1>Classroom Weather Map</h1><div class="privacy"><b>Privacy boundary:</b> only groups with at least
-{self.minimum_group_size} pseudonymous contributors are shown. Events expire after {self.retention_days} days.
-No conversation text, direct identity, token, or contributor hash is present in this report.
-Contributor linkage is pseudonymous and restricted to one cell and UTC day.</div>
-<p>Differentially private Laplace estimates are shown (ε={receipt.epsilon_per_release:g} for this
-memoized release; cumulative ε={receipt.epsilon_spent:g}/{receipt.epsilon_limit:g}). Counts may be zero
-or differ from exact internal aggregates.</p>
-<table><caption>Aggregated learning-difficulty signals</caption><thead><tr><th scope="col">Activity</th><th scope="col">Language</th><th scope="col">Concept</th><th scope="col">Signal</th>
-<th scope="col">Events</th><th scope="col">Contributors</th><th scope="col">Suggested intervention</th></tr></thead><tbody>{rows}</tbody></table></main></html>"""
         self._publish_artifact(
             destination,
-            html.encode(),
+            html_artifact(
+                cells,
+                receipt,
+                minimum_group_size=self.minimum_group_size,
+                retention_days=self.retention_days,
+                fixed_public_universe=self.public_cell_universe is not None,
+            ),
             artifact_kind="html",
             course_key=course_key,
             snapshot_hash=snapshot_hash,

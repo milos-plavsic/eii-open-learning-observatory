@@ -8,24 +8,26 @@ from pathlib import Path
 ROOT = Path(__file__).parents[1]
 DEFAULT_MODULE_LINES = 400
 DEFAULT_FUNCTION_LINES = 120
+DEFAULT_MODULE_STATEMENTS = 220
+DEFAULT_FUNCTION_STATEMENTS = 80
 
 # Existing debt is explicit and may only move downward. Removing an entry is the
 # intended end state; raising a limit requires a reviewed architecture decision.
 MODULE_DEBT = {
-    "src/eii/appliance.py": 590,
     "src/eii/babelbridge.py": 436,
-    "src/eii/cli.py": 558,
     "src/eii/safety.py": 523,
     "src/eii/study.py": 441,
 }
 FUNCTION_DEBT = {
-    "src/eii/appliance.py:make_handler": 170,
-    "src/eii/cli.py:main": 470,
-    "src/eii/cli_parser.py:parser": 346,
     "src/eii/evidence.py:load_bundle": 190,
     "src/eii/safety.py:SafetyEvaluator.evaluate": 165,
     "src/eii/safety_verification.py:validate_safety_case_document": 200,
     "src/eii/study.py:make_study_handler": 124,
+}
+MODULE_STATEMENT_DEBT: dict[str, int] = {}
+FUNCTION_STATEMENT_DEBT = {
+    "src/eii/safety_verification.py:validate_safety_case_document": 115,
+    "src/eii/study.py:make_study_handler": 95,
 }
 
 
@@ -41,6 +43,10 @@ def check_file(path: Path) -> list[str]:
     if len(lines) > module_limit:
         failures.append(f"{relative}: {len(lines)} module lines exceed {module_limit}")
     tree = ast.parse("\n".join(lines), filename=relative)
+    statement_count = sum(isinstance(node, ast.stmt) for node in ast.walk(tree))
+    statement_limit = MODULE_STATEMENT_DEBT.get(relative, DEFAULT_MODULE_STATEMENTS)
+    if statement_count > statement_limit:
+        failures.append(f"{relative}: {statement_count} statements exceed {statement_limit}")
 
     def visit(nodes: list[ast.stmt], parents: tuple[str, ...] = ()) -> None:
         for node in nodes:
@@ -50,6 +56,14 @@ def check_file(path: Path) -> list[str]:
                 limit = FUNCTION_DEBT.get(f"{relative}:{name}", DEFAULT_FUNCTION_LINES)
                 if length > limit:
                     failures.append(f"{relative}:{name}: {length} lines exceed {limit}")
+                statements = sum(isinstance(item, ast.stmt) for item in ast.walk(node))
+                statement_limit = FUNCTION_STATEMENT_DEBT.get(
+                    f"{relative}:{name}", DEFAULT_FUNCTION_STATEMENTS
+                )
+                if statements > statement_limit:
+                    failures.append(
+                        f"{relative}:{name}: {statements} statements exceed {statement_limit}"
+                    )
                 visit(node.body, (*parents, node.name))
             elif isinstance(node, ast.ClassDef):
                 visit(node.body, (*parents, node.name))

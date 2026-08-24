@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "cases": [
+    {
+      "id": "cocreate-six-language-known-gap",
+      "sources": [
+        "examples/cocreate-mini/en",
+        "examples/cocreate-mini/sr",
+        "examples/cocreate-mini/es",
+        "examples/cocreate-mini/pt",
+        "examples/cocreate-mini/ca",
+        "examples/cocreate-mini/hr"
+      ],
+      "glossary": "examples/cocreate-mini/glossary.json",
+      "expected": ["translation.missing_unit"],
+      "forbidden": ["translation.number_or_unit_drift"],
+      "maximum_finding_severity": "high",
+      "provenance": "authored-realistic-open-fixture"
+    },
+    {
+      "id": "clean-number-followed-by-translated-nouns",
+      "sources": [
+        "tests/accuracy_corpus/clean-number-nouns/en",
+        "tests/accuracy_corpus/clean-number-nouns/sr"
+      ],
+      "expected": [],
+      "forbidden": ["translation.number_or_unit_drift"],
+      "maximum_finding_severity": "none",
+      "provenance": "human-labeled-negative-regression-fixture"
+    }
+  ]
+}
