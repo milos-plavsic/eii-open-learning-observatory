@@ -19,6 +19,20 @@ def assert_severity_ceiling(test: unittest.TestCase, findings: list[dict], ceili
 
 
 class GoldenAccuracyCorpusTests(unittest.TestCase):
+    def test_corpus_has_a_non_shrinking_validation_floor(self):
+        document = json.loads(CORPUS.read_text("utf-8"))
+        cases = document["cases"]
+        identifiers = [case["id"] for case in cases]
+        self.assertEqual(len(identifiers), len(set(identifiers)))
+        self.assertGreaterEqual(len(cases), 4)
+        self.assertGreaterEqual(
+            sum(case.get("maximum_finding_severity") == "none" for case in cases), 2
+        )
+        self.assertTrue(any(case["expected"] for case in cases))
+        self.assertTrue(all(case.get("provenance") for case in cases))
+        languages = {Path(source).name for case in cases for source in case["sources"]}
+        self.assertTrue({"en", "sr", "es", "pt", "ca", "hr"}.issubset(languages))
+
     def test_labeled_multilingual_outputs(self):
         document = json.loads(CORPUS.read_text("utf-8"))
         self.assertEqual(document["schema_version"], "1.0")

@@ -27,6 +27,47 @@
       "forbidden": ["translation.number_or_unit_drift"],
       "maximum_finding_severity": "none",
       "provenance": "human-labeled-negative-regression-fixture"
+    },
+    {
+      "id": "clean-six-language-rich-literals",
+      "sources": [
+        "tests/accuracy_corpus/clean-six-language/en",
+        "tests/accuracy_corpus/clean-six-language/sr",
+        "tests/accuracy_corpus/clean-six-language/es",
+        "tests/accuracy_corpus/clean-six-language/pt",
+        "tests/accuracy_corpus/clean-six-language/ca",
+        "tests/accuracy_corpus/clean-six-language/hr"
+      ],
+      "expected": [],
+      "forbidden": [
+        "translation.number_or_unit_drift",
+        "translation.number_or_unit_order_drift",
+        "translation.code_drift",
+        "translation.link_or_asset_drift",
+        "translation.missing_unit"
+      ],
+      "maximum_finding_severity": "none",
+      "provenance": "human-labeled-six-language-negative-fixture"
+    },
+    {
+      "id": "positive-six-language-independent-drifts",
+      "sources": [
+        "tests/accuracy_corpus/positive-six-language/en",
+        "tests/accuracy_corpus/positive-six-language/sr",
+        "tests/accuracy_corpus/positive-six-language/es",
+        "tests/accuracy_corpus/positive-six-language/pt",
+        "tests/accuracy_corpus/positive-six-language/ca",
+        "tests/accuracy_corpus/positive-six-language/hr"
+      ],
+      "expected": [
+        "translation.number_or_unit_drift",
+        "translation.number_or_unit_order_drift",
+        "translation.code_drift",
+        "translation.link_or_asset_drift"
+      ],
+      "forbidden": ["translation.missing_unit"],
+      "maximum_finding_severity": "high",
+      "provenance": "human-labeled-six-language-positive-fixture"
     }
   ]
 }

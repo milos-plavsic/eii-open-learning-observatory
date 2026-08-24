@@ -42,24 +42,47 @@ class Tutor:
 
 
 class ApplianceDefensiveTests(unittest.TestCase):
-    def test_router_rejects_duplicates_dispatches_fallback_and_404(self):
+    def test_router_rejects_ambiguous_patterns_dispatches_params_and_404(self):
         calls = []
         router = ApplianceRouter()
 
         def handler(request):
-            calls.append(request)
+            calls.append(dict(request.route_params))
 
         router.add("get", "/exact", handler)
         with self.assertRaisesRegex(ValueError, "duplicate appliance route"):
             router.add("GET", "/exact", handler)
-        router.fallback("get", handler)
-        with self.assertRaisesRegex(ValueError, "duplicate appliance fallback"):
-            router.fallback("GET", handler)
+        router.add_pattern("GET", "/course/{course_id}", handler)
+        router.add("GET", "/{content_path:path}", handler)
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            router.add_pattern("GET", "/course/{other_name}", handler)
+        for pattern, message in (
+            ("relative/{name}", "absolute"),
+            ("/course/{name}?x", "absolute"),
+            ("/course/{name}/{name}", "duplicate"),
+            ("/course/{tail:path}/extra", "final"),
+            ("/course/{invalid-name}", "invalid"),
+        ):
+            with self.subTest(pattern=pattern), self.assertRaisesRegex(ValueError, message):
+                router.add_pattern("GET", pattern, handler)
+        for path in ("relative", "/query?x", "/fragment#x"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "absolute"):
+                router.add("GET", path, handler)
         request = Mock()
         router.dispatch(request, "get", "/exact")
-        router.dispatch(request, "get", "/fallback")
+        router.dispatch(request, "get", "/course/loops")
+        router.dispatch(request, "get", "/assets/images/loop.svg")
+        router.dispatch(request, "get", "/")
         router.dispatch(request, "post", "/absent")
-        self.assertEqual(calls, [request, request])
+        self.assertEqual(
+            calls,
+            [
+                {},
+                {"course_id": "loops"},
+                {"content_path": "assets/images/loop.svg"},
+                {"content_path": ""},
+            ],
+        )
         request.send_error.assert_called_once_with(404)
 
     def test_configuration_capability_and_package_preconditions(self):
