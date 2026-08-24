@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Current version: **0.1.0**, the first public alpha of the software. The canonical
+Current version: **0.2.0**, the second public alpha of the software. The canonical
 repository is [eii-open-learning-observatory](https://github.com/milos-plavsic/eii-open-learning-observatory).
 
 An independent evidence and quality layer for open digital education. The
@@ -18,7 +18,7 @@ produces versioned, reviewable evidence for:
 The project is intentionally independent of PLCT. PLCT is one adapter; the
 canonical model and evidence formats remain stable if PLCT changes.
 
-> **0.1.0 alpha and validation boundary:** The deterministic core performs extraction,
+> **0.2.0 alpha and validation boundary:** The deterministic core performs extraction,
 > structural comparison, provenance hashing, schema validation, packaging, and
 > report generation without an ML runtime. Semantic judgments—including
 > contradiction, misconception, weak-example, generated-question, difficulty,
@@ -131,9 +131,28 @@ with a key holder, and only a policy authorizes that holder for a purpose.
 
 The bundled retriever is a deterministic, cached BM25/concept baseline with
 Unicode/CJK tokenization and recall@k, precision@k, hit-rate, mean-reciprocal-rank,
-and nDCG evaluation support. It is not an embedding retriever;
+and nDCG evaluation support. An optional versioned glossary performs phrase-aware,
+down-weighted cross-language query expansion for covered concepts. It is not an
+embedding retriever, and glossary coverage is not general semantic retrieval;
 deployments claiming multilingual retrieval quality must provide and publish a
 human-labeled retrieval benchmark.
+
+Semantic-panel evidence exposes agreement ratio, winning-side mean confidence,
+and dissenting-side mean confidence separately. The compatibility
+`decision_score` is the winning-side mean self-report, never a calibrated
+probability and is deprecated as a standalone gate. Policies can independently
+require minimum agreement, cap confident dissent, or require unanimity. Each
+semantic property carries its independently computed agreement ratio. Property-level
+confidence remains `null` until evaluators report property-specific confidence; the
+implementation never reuses a whole-answer confidence as manufactured precision.
+Agreement and completion use the configured panel—not merely successful responses—as
+their denominator. Provider failures are counted separately and fail closed by
+default; a policy must explicitly set `maximum_failed_members` to tolerate them.
+
+Alignment artifacts use `alignment-score-v2`: the exact versioned scoring result
+used for candidate selection, including hard translation-ID decisions, relative
+position, eligibility and normalized components. The score ranks candidates; it
+does not establish semantic equivalence.
 
 Core workflows:
 
@@ -162,6 +181,7 @@ python -m eii safety-review-sign unsigned-review.json \
 
 # Locally aggregate minimized classroom signals
 python -m eii weather-key-generate --output weather.key
+python -m eii weather-key-generate --output weather-ledger.key
 python -m eii weather events.json --database weather.sqlite \
   --secret-file weather.key --ledger-key-file weather-ledger.key \
   --output weather-map.json

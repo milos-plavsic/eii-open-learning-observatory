@@ -9,6 +9,51 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 
+def bind_ledger_key(connection: sqlite3.Connection, *, ledger_key: bytes) -> None:
+    """Bind one independently managed ledger key to the database."""
+    fingerprint = hashlib.sha256(ledger_key).hexdigest()
+    row = connection.execute(
+        "SELECT key_fingerprint FROM privacy_ledger_key_binding WHERE id=1"
+    ).fetchone()
+    if row and not hmac.compare_digest(row[0], fingerprint):
+        raise ValueError("weather ledger key does not match the database binding")
+    connection.execute(
+        "INSERT OR IGNORE INTO privacy_ledger_key_binding VALUES (1,?)", (fingerprint,)
+    )
+    connection.commit()
+
+
+def authorize_export(
+    connection: sqlite3.Connection,
+    *,
+    scope: str,
+    strategy: str,
+    snapshot_hash: str,
+    exported_at: datetime,
+    minimum_interval: timedelta,
+) -> None:
+    """Reject an ineligible release before noise generation spends privacy budget."""
+    _validate_export_time(exported_at)
+    with connection:
+        connection.execute("INSERT OR IGNORE INTO privacy_export_policy VALUES (1,?)", (strategy,))
+        policy = connection.execute(
+            "SELECT partition_strategy FROM privacy_export_policy WHERE id=1"
+        ).fetchone()
+        if policy and policy[0] != strategy:
+            raise ValueError("privacy export partition strategy cannot be mixed in one database")
+    previous = connection.execute(
+        "SELECT exported_at,snapshot_hash FROM privacy_exports_v3 WHERE scope=? "
+        "ORDER BY exported_at DESC LIMIT 1",
+        (scope,),
+    ).fetchone()
+    if previous:
+        prior_time = datetime.fromisoformat(previous[0])
+        if exported_at <= prior_time:
+            raise ValueError("privacy export timestamps must be strictly increasing")
+        if exported_at - prior_time < minimum_interval and previous[1] != snapshot_hash:
+            raise ValueError("privacy export interval blocks a differencing-prone update")
+
+
 def bind_key_epoch(connection: sqlite3.Connection, *, secret: bytes, epoch: str) -> None:
     fingerprint = hashlib.sha256(secret).hexdigest()
     row = connection.execute(
@@ -53,14 +98,23 @@ def verify_export_ledger(connection: sqlite3.Connection, *, ledger_key: bytes) -
     """Verify the complete keyed append-only chain and return its current head."""
     previous: str | None = None
     rows = connection.execute(
-        "SELECT scope,exported_at,payload_hash,previous_hash,record_hash "
-        "FROM privacy_export_audit ORDER BY sequence"
+        "SELECT scope,artifact_kind,exported_at,snapshot_hash,artifact_hash,previous_hash,record_hash "
+        "FROM privacy_export_audit_v2 ORDER BY sequence"
     ).fetchall()
-    for scope, exported_at, payload_hash, previous_hash, record_hash in rows:
+    for (
+        scope,
+        artifact_kind,
+        exported_at,
+        snapshot_hash,
+        artifact_hash,
+        previous_hash,
+        record_hash,
+    ) in rows:
         if previous_hash != previous:
             raise ValueError("privacy export ledger chain is discontinuous")
         encoded = json.dumps(
-            [scope, exported_at, payload_hash, previous], separators=(",", ":")
+            [scope, artifact_kind, exported_at, snapshot_hash, artifact_hash, previous],
+            separators=(",", ":"),
         ).encode()
         expected = hmac.new(ledger_key, encoded, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(record_hash, expected):
@@ -74,41 +128,67 @@ def record_export(
     *,
     scope: str,
     strategy: str,
+    artifact_kind: str,
     exported_at: datetime,
-    payload_hash: str,
+    snapshot_hash: str,
+    artifact_hash: str,
     minimum_interval: timedelta,
     ledger_key: bytes,
 ) -> None:
+    _validate_export_time(exported_at)
     verify_export_ledger(connection, ledger_key=ledger_key)
-    policy = connection.execute(
-        "SELECT partition_strategy FROM privacy_export_policy WHERE id=1"
-    ).fetchone()
-    if policy and policy[0] != strategy:
-        raise ValueError("privacy export partition strategy cannot be mixed in one database")
-    connection.execute("INSERT OR IGNORE INTO privacy_export_policy VALUES (1,?)", (strategy,))
-    previous = connection.execute(
-        "SELECT exported_at,payload_hash FROM privacy_exports_v2 WHERE scope=?", (scope,)
-    ).fetchone()
-    if (
-        previous
-        and exported_at - datetime.fromisoformat(previous[0]) < minimum_interval
-        and previous[1] != payload_hash
-    ):
-        raise ValueError("privacy export interval blocks a differencing-prone update")
-    connection.execute(
-        "INSERT OR REPLACE INTO privacy_exports_v2 VALUES (?,?,?)",
-        (scope, exported_at.isoformat(), payload_hash),
-    )
-    previous_audit = connection.execute(
-        "SELECT record_hash FROM privacy_export_audit ORDER BY sequence DESC LIMIT 1"
-    ).fetchone()
-    previous_hash = previous_audit[0] if previous_audit else None
-    encoded = json.dumps(
-        [scope, exported_at.isoformat(), payload_hash, previous_hash], separators=(",", ":")
-    ).encode()
-    record_hash = hmac.new(ledger_key, encoded, hashlib.sha256).hexdigest()
-    connection.execute(
-        "INSERT INTO privacy_export_audit(scope,exported_at,payload_hash,previous_hash,record_hash) VALUES (?,?,?,?,?)",
-        (scope, exported_at.isoformat(), payload_hash, previous_hash, record_hash),
-    )
-    connection.commit()
+    with connection:
+        policy = connection.execute(
+            "SELECT partition_strategy FROM privacy_export_policy WHERE id=1"
+        ).fetchone()
+        if policy and policy[0] != strategy:
+            raise ValueError("privacy export partition strategy cannot be mixed in one database")
+        connection.execute("INSERT OR IGNORE INTO privacy_export_policy VALUES (1,?)", (strategy,))
+        previous = connection.execute(
+            "SELECT exported_at,snapshot_hash FROM privacy_exports_v3 WHERE scope=? "
+            "ORDER BY exported_at DESC LIMIT 1",
+            (scope,),
+        ).fetchone()
+        if previous:
+            prior_time = datetime.fromisoformat(previous[0])
+            if exported_at <= prior_time:
+                raise ValueError("privacy export timestamps must be strictly increasing")
+            if exported_at - prior_time < minimum_interval and previous[1] != snapshot_hash:
+                raise ValueError("privacy export interval blocks a differencing-prone update")
+        connection.execute(
+            "INSERT OR REPLACE INTO privacy_exports_v3 VALUES (?,?,?,?,?)",
+            (scope, artifact_kind, exported_at.isoformat(), snapshot_hash, artifact_hash),
+        )
+        previous_audit = connection.execute(
+            "SELECT record_hash FROM privacy_export_audit_v2 ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = previous_audit[0] if previous_audit else None
+        encoded = json.dumps(
+            [
+                scope,
+                artifact_kind,
+                exported_at.isoformat(),
+                snapshot_hash,
+                artifact_hash,
+                previous_hash,
+            ],
+            separators=(",", ":"),
+        ).encode()
+        record_hash = hmac.new(ledger_key, encoded, hashlib.sha256).hexdigest()
+        connection.execute(
+            "INSERT INTO privacy_export_audit_v2(scope,artifact_kind,exported_at,snapshot_hash,artifact_hash,previous_hash,record_hash) VALUES (?,?,?,?,?,?,?)",
+            (
+                scope,
+                artifact_kind,
+                exported_at.isoformat(),
+                snapshot_hash,
+                artifact_hash,
+                previous_hash,
+                record_hash,
+            ),
+        )
+
+
+def _validate_export_time(exported_at: datetime) -> None:
+    if exported_at.tzinfo is None or exported_at.utcoffset() is None:
+        raise ValueError("privacy export timestamp must include a timezone")

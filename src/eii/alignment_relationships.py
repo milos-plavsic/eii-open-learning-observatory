@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from .alignment import Alignment, relationship_id
+from .alignment import ALIGNMENT_SCORE_VERSION, Alignment, relationship_id
 from .domain import ContentBlock, CourseRelease, Finding, content_hash
 
 CourseBlock = tuple[CourseRelease, ContentBlock]
+
+
+@dataclass(frozen=True, slots=True)
+class PairScore:
+    raw_score: float
+    normalized_score: float
+    eligible: bool
+    hard_reason: str | None
+    components: Mapping[str, float]
 
 
 class AlignmentResult(Protocol):
@@ -27,6 +37,21 @@ class TranslationUnitStatus:
     languages_missing: tuple[str, ...]
     state: str
     members: tuple[tuple[str, str], ...]
+
+
+def _valid_score(value: object, *, nullable: bool = False) -> bool:
+    return (nullable and value is None) or (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and 0 <= value <= 1
+    )
+
+
+def _valid_components(value: object) -> bool:
+    return isinstance(value, Mapping) and all(
+        isinstance(name, str) and name and _valid_score(score) for name, score in value.items()
+    )
 
 
 def validate_translation_ids(release: CourseRelease) -> None:
@@ -62,11 +87,43 @@ def pair_score(
     right_count: int,
     title_similarity: Callable[[str, str], float],
 ) -> float:
+    return score_pair(
+        left,
+        right,
+        left_index,
+        right_index,
+        left_count,
+        right_count,
+        title_similarity,
+    ).raw_score
+
+
+def score_pair(
+    left: ContentBlock,
+    right: ContentBlock,
+    left_index: int,
+    right_index: int,
+    left_count: int,
+    right_count: int,
+    title_similarity: Callable[[str, str], float],
+) -> PairScore:
     left_translation, right_translation = translation_key(left), translation_key(right)
     if left_translation and left_translation == right_translation:
-        return 12.0
-    if left_translation or right_translation:
-        return -12.0
+        return PairScore(
+            12.0,
+            1.0,
+            True,
+            "matching-translation-id",
+            _score_components(left, right, 1.0, 0.0, 0.0, 0.0, title_similarity),
+        )
+    if left_translation and right_translation:
+        return PairScore(
+            -12.0,
+            0.0,
+            False,
+            "missing-or-conflicting-translation-id",
+            _score_components(left, right, 0.0, 1.0, 0.0, 0.0, title_similarity),
+        )
     score = 0.0
     shared = set(left.concepts) & set(right.concepts)
     if shared:
@@ -77,16 +134,124 @@ def pair_score(
         score += 1.5
     if left.kind == right.kind:
         score += 0.75
-    if left.metadata.get("heading_level") == right.metadata.get("heading_level"):
+    if (
+        left.metadata.get("heading_level") is not None
+        and right.metadata.get("heading_level") is not None
+        and left.metadata["heading_level"] == right.metadata["heading_level"]
+    ):
         score += 0.5
     similarity = title_similarity(left.title, right.title)
     if similarity >= 0.72:
         score += 3.0 * similarity
+    position = 0.0
     if left_count > 1 and right_count > 1:
         left_position = left_index / (left_count - 1)
         right_position = right_index / (right_count - 1)
-        score += max(0.0, 1.0 - abs(left_position - right_position) * 2)
-    return score
+        position = max(0.0, 1.0 - abs(left_position - right_position) * 2)
+        score += position
+    translation_missing = float(bool(left_translation) != bool(right_translation))
+    if translation_missing:
+        score -= 2.0
+    components = _score_components(
+        left, right, 0.0, 0.0, translation_missing, position, title_similarity
+    )
+    return PairScore(
+        score,
+        round(max(0.0, min(1.0, score / 20.75)), 8),
+        score >= (6.0 if translation_missing else 2.5),
+        "one-sided-translation-id" if translation_missing else None,
+        components,
+    )
+
+
+def _score_components(
+    left: ContentBlock,
+    right: ContentBlock,
+    translation_match: float,
+    translation_conflict: float,
+    translation_missing: float,
+    position: float,
+    title_similarity: Callable[[str, str], float],
+) -> dict[str, float]:
+    union = set(left.concepts) | set(right.concepts)
+    similarity = title_similarity(left.title, right.title)
+    return {
+        "translation_id_match": translation_match,
+        "translation_id_conflict": translation_conflict,
+        "translation_id_missing": translation_missing,
+        "concept_jaccard": len(set(left.concepts) & set(right.concepts)) / len(union)
+        if union
+        else 0.0,
+        "block_id_match": float(left.id == right.id),
+        "path_match": float(left.locator.path == right.locator.path),
+        "kind_match": float(left.kind == right.kind),
+        "heading_level_match": float(
+            left.metadata.get("heading_level") is not None
+            and right.metadata.get("heading_level") is not None
+            and left.metadata["heading_level"] == right.metadata["heading_level"]
+        ),
+        "title_similarity": similarity,
+        "title_threshold_met": float(similarity >= 0.72),
+        "relative_position_similarity": position,
+    }
+
+
+def pair_score_components(
+    left: ContentBlock,
+    right: ContentBlock,
+    title_similarity: Callable[[str, str], float],
+) -> tuple[float, dict[str, float]]:
+    """Return the bounded ranking score and auditable components used for selection."""
+    result = score_pair(left, right, 0, 0, 1, 1, title_similarity)
+    return result.normalized_score, dict(result.components)
+
+
+def group_score_components(
+    group: Sequence[CourseBlock], title_similarity: Callable[[str, str], float]
+) -> tuple[float, dict[str, float]]:
+    """Aggregate transparent pair-ranking signals for a multilingual group."""
+    first_block = group[0][1]
+    first_release = group[0][0]
+    first_index = first_release.blocks.index(first_block)
+    comparisons = []
+    for release, block in group[1:]:
+        result = score_pair(
+            first_block,
+            block,
+            first_index,
+            release.blocks.index(block),
+            len(first_release.blocks),
+            len(release.blocks),
+            title_similarity,
+        )
+        comparisons.append((result.normalized_score, result.components))
+    if not comparisons:
+        return 1.0, {}
+    names = sorted({name for _, components in comparisons for name in components})
+    components = {
+        name: round(sum(values.get(name, 0.0) for _, values in comparisons) / len(comparisons), 8)
+        for name in names
+    }
+    return round(sum(item[0] for item in comparisons) / len(comparisons), 8), components
+
+
+def alignment_identity(group: Sequence[CourseBlock]) -> tuple[str, str]:
+    """Derive a stable concept identity and disclose the method that produced it."""
+    declared = {translation_key(block) for _, block in group if translation_key(block)}
+    explicit = set(group[0][1].concepts)
+    for _, block in group[1:]:
+        explicit &= set(block.concepts)
+    if len(declared) == 1:
+        method = (
+            "explicit-translation-id"
+            if all(translation_key(block) for _, block in group)
+            else "partial-translation-id"
+        )
+        return "translation:" + str(next(iter(declared))), method
+    if explicit:
+        return sorted(explicit)[0], "explicit-concept"
+    seed = [(release.canonical_course_id, block.order) for release, block in group]
+    return "derived:" + content_hash(seed).split(":", 1)[1][:20], "title-or-order-heuristic"
 
 
 def semantic_group(
@@ -177,13 +342,42 @@ def parse_sealed_relationships(
         raise ValueError("semantic evaluations require sealed alignment records")
     relationships: dict[str, set[tuple[str, str]]] = {}
     for alignment in records:
+        legacy_fields = {"concept_id", "members", "confidence", "method", "cardinality"}
+        current_fields = legacy_fields | {
+            "alignment_score",
+            "score_components",
+            "score_version",
+        }
+        legacy = isinstance(alignment, Mapping) and set(alignment) == legacy_fields
         if (
             not isinstance(alignment, Mapping)
-            or set(alignment) != {"concept_id", "members", "confidence", "method", "cardinality"}
+            or frozenset(alignment)
+            not in {
+                frozenset(legacy_fields),
+                frozenset(current_fields),
+            }
             or not isinstance(alignment["concept_id"], str)
             or not alignment["concept_id"].strip()
             or not isinstance(alignment["members"], (list, tuple))
             or len(alignment["members"]) < 2
+            or not _valid_score(alignment["confidence"], nullable=True)
+            or (
+                not legacy
+                and (
+                    not _valid_score(alignment["alignment_score"])
+                    or not _valid_components(alignment["score_components"])
+                    or alignment["score_version"] != ALIGNMENT_SCORE_VERSION
+                )
+            )
+            or alignment["method"]
+            not in {
+                "explicit-translation-id",
+                "partial-translation-id",
+                "explicit-concept",
+                "title-or-order-heuristic",
+            }
+            or alignment["cardinality"]
+            not in {"one-to-one", "one-to-many", "many-to-one", "many-to-many"}
         ):
             raise ValueError("semantic evaluation alignment record is invalid")
         members = tuple(

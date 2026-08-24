@@ -4,71 +4,24 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from enum import StrEnum
 from html import escape
 from pathlib import Path
 
 from .persistence import DatabaseStatus, backup_database, connect_database, database_status
+from .weather_dp import DifferentialPrivacyReceipt, release_counts, validate_policy
 from .weather_migrations import WEATHER_MIGRATIONS
-from .weather_privacy import bind_key_epoch, record_export, rotate_key_epoch, verify_export_ledger
-
-
-class Signal(StrEnum):
-    MISCONCEPTION = "misconception"
-    REPEATED_QUESTION = "repeated_question"
-    COMPLETE_ANSWER_REQUEST = "complete_answer_request"
-    FRUSTRATION = "frustration"
-    ABANDONMENT = "abandonment"
-    RETRIEVAL_FAILURE = "retrieval_failure"
-    UNSUPPORTED_QUESTION = "unsupported_question"
-
-
-@dataclass(frozen=True, slots=True)
-class MinimizedEvent:
-    occurred_at: str
-    course_key: str
-    activity_key: str
-    language: str
-    concept_id: str
-    signal: Signal
-    contribution_token: str
-
-    def __post_init__(self) -> None:
-        for label, value, maximum in (
-            ("course_key", self.course_key, 200),
-            ("activity_key", self.activity_key, 200),
-            ("language", self.language, 35),
-            ("concept_id", self.concept_id, 200),
-        ):
-            if not value.strip() or len(value) > maximum or any(ord(char) < 32 for char in value):
-                raise ValueError(f"{label} must be non-empty, bounded text without controls")
-        if (
-            "@" in self.contribution_token
-            or len(self.contribution_token) > 128
-            or any(char.isspace() or ord(char) < 33 for char in self.contribution_token)
-        ):
-            raise ValueError("contribution token must be pseudonymous and bounded")
-        if not self.contribution_token.strip():
-            raise ValueError("contribution token cannot be empty")
-        occurred = datetime.fromisoformat(self.occurred_at)
-        if occurred.tzinfo is None:
-            raise ValueError("event timestamp must include a timezone")
-
-
-@dataclass(frozen=True, slots=True)
-class WeatherCell:
-    course_key: str
-    activity_key: str
-    language: str
-    concept_id: str
-    signal: Signal
-    event_count: int
-    contributor_count: int
-    explanation: str
-    recommendation: str
-
+from .weather_privacy import (
+    authorize_export,
+    bind_key_epoch,
+    bind_ledger_key,
+    rotate_key_epoch,
+    verify_export_ledger,
+)
+from .weather_publication import publish_artifact, recover_publications
+from .weather_types import MinimizedEvent, Signal, WeatherCell
+from .weather_types import load_events as load_events
 
 _RECOMMENDATIONS = {
     Signal.MISCONCEPTION: "Add a contrasting example and a diagnostic question.",
@@ -96,6 +49,8 @@ class WeatherStore:
         minimum_export_interval_hours: int = 24,
         key_epoch: str = "v1",
         ledger_key: bytes | None = None,
+        dp_epsilon: float = 1.0,
+        dp_total_epsilon: float = 10.0,
     ):
         if len(secret) < 32:
             raise ValueError("weather secret must contain at least 32 bytes")
@@ -107,6 +62,7 @@ class WeatherStore:
             raise ValueError("contribution bound must be positive")
         if count_granularity < 1 or minimum_export_interval_hours < 1:
             raise ValueError("count granularity and export interval must be positive")
+        validate_policy(dp_epsilon, dp_total_epsilon)
         if (
             not key_epoch.strip()
             or len(key_epoch) > 64
@@ -114,6 +70,7 @@ class WeatherStore:
         ):
             raise ValueError("key epoch must be bounded printable text without whitespace")
         self.path, self.secret = path, secret
+        self._implicit_ledger_key = ledger_key is None
         self.ledger_key = ledger_key or secret
         if len(self.ledger_key) < 32:
             raise ValueError("weather ledger key must contain at least 32 bytes")
@@ -122,9 +79,22 @@ class WeatherStore:
         self.count_granularity = count_granularity
         self.minimum_export_interval_hours = minimum_export_interval_hours
         self.key_epoch = key_epoch
+        self.dp_epsilon, self.dp_total_epsilon = dp_epsilon, dp_total_epsilon
         self.connection = connect_database(path, kind="weather", migrations=WEATHER_MIGRATIONS)
         try:
+            configured_budget = self.connection.execute(
+                "SELECT epsilon_limit FROM dp_budget WHERE id=1"
+            ).fetchone()
+            if configured_budget and configured_budget[0] != self.dp_total_epsilon:
+                raise ValueError("differential-privacy budget limit is immutable for this database")
             bind_key_epoch(self.connection, secret=self.secret, epoch=self.key_epoch)
+            bind_ledger_key(self.connection, ledger_key=self.ledger_key)
+            verify_export_ledger(self.connection, ledger_key=self.ledger_key)
+            recover_publications(
+                self.connection,
+                ledger_key=self.ledger_key,
+                minimum_interval=timedelta(hours=self.minimum_export_interval_hours),
+            )
         except Exception:
             self.connection.close()
             raise
@@ -141,12 +111,30 @@ class WeatherStore:
     def rotate_privacy_key(self, *, new_secret: bytes, new_epoch: str) -> int:
         if len(new_secret) < 32:
             raise ValueError("weather secret must contain at least 32 bytes")
+        if self._implicit_ledger_key:
+            raise ValueError(
+                "privacy-key rotation requires an independently supplied persistent ledger key"
+            )
         purged = rotate_key_epoch(self.connection, new_secret=new_secret, new_epoch=new_epoch)
         self.secret, self.key_epoch = new_secret, new_epoch
         return purged
 
     def verify_export_ledger(self) -> str | None:
         return verify_export_ledger(self.connection, ledger_key=self.ledger_key)
+
+    def verify_export_artifact(
+        self, artifact: Path, *, artifact_kind: str, course_key: str | None = None
+    ) -> None:
+        self.verify_export_ledger()
+        row = self.connection.execute(
+            "SELECT artifact_hash FROM privacy_export_audit_v2 "
+            "WHERE scope=? AND artifact_kind=? ORDER BY sequence DESC LIMIT 1",
+            (course_key or "*", artifact_kind),
+        ).fetchone()
+        if row is None or hashlib.sha256(artifact.read_bytes()).hexdigest() != row[0]:
+            raise ValueError(
+                "weather artifact is absent from or inconsistent with the export ledger"
+            )
 
     def __enter__(self) -> WeatherStore:
         return self
@@ -249,9 +237,11 @@ class WeatherStore:
         course_key: str | None = None,
         now: datetime | None = None,
     ) -> None:
-        cells = self._privacy_cells(course_key=course_key, now=now)
+        cells, receipt, snapshot_hash, exported_at = self._privacy_cells(
+            course_key=course_key, now=now
+        )
         payload = {
-            "schema_version": "2.0",
+            "schema_version": "3.0",
             "privacy": {
                 "minimum_group_size": self.minimum_group_size,
                 "retention_days": self.retention_days,
@@ -263,42 +253,93 @@ class WeatherStore:
                 "minimum_export_interval_hours": self.minimum_export_interval_hours,
                 "key_epoch": self.key_epoch,
                 "contribution_linkage": "within-cell-day-only-pseudonymous",
+                "mechanism": "central-laplace-differential-privacy",
+                "protected_unit": "bounded-contributor-cell-utc-day",
+                "epsilon_per_release": receipt.epsilon_per_release,
+                "epsilon_spent": receipt.epsilon_spent,
+                "epsilon_limit": receipt.epsilon_limit,
+                "composition": "basic-sequential",
+                "release_memoization": "scope-snapshot-policy-bound",
+                "event_count_sensitivity": self.max_events_per_contributor_per_cell,
+                "contributor_count_sensitivity": 1,
+                "artifact_ledger_binding": "sha256-exact-serialized-bytes",
+                "cell_selection_privacy": "exact-k-threshold-not-end-to-end-dp",
             },
             "cells": [asdict(cell) for cell in cells],
         }
         serialized = json.dumps(payload, ensure_ascii=False, indent=2, default=str) + "\n"
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(serialized, "utf-8")
+        self._publish_artifact(
+            destination,
+            serialized.encode(),
+            artifact_kind="json",
+            course_key=course_key,
+            snapshot_hash=snapshot_hash,
+            exported_at=exported_at,
+        )
 
     def _privacy_cells(
         self, *, course_key: str | None, now: datetime | None = None
-    ) -> tuple[WeatherCell, ...]:
-        cells = tuple(self._coarsen(cell) for cell in self.aggregate(course_key=course_key))
-        payload_hash = hashlib.sha256(
+    ) -> tuple[tuple[WeatherCell, ...], DifferentialPrivacyReceipt, str, datetime]:
+        # Noise is applied to the raw bounded counts. Any output rounding happens
+        # afterwards as privacy-preserving post-processing.
+        cells = self.aggregate(course_key=course_key)
+        snapshot_hash = hashlib.sha256(
             json.dumps([asdict(cell) for cell in cells], sort_keys=True, default=str).encode()
         ).hexdigest()
         exported_at = now or datetime.now(UTC)
         scope = course_key or "*"
         strategy = "global" if course_key is None else "course-partitioned"
-        record_export(
+        authorize_export(
             self.connection,
             scope=scope,
             strategy=strategy,
+            snapshot_hash=snapshot_hash,
             exported_at=exported_at,
-            payload_hash=payload_hash,
+            minimum_interval=timedelta(hours=self.minimum_export_interval_hours),
+        )
+        released, receipt = release_counts(
+            self.connection,
+            scope=course_key or "*",
+            snapshot_hash=snapshot_hash,
+            cells=[asdict(cell) for cell in cells],
+            epsilon=self.dp_epsilon,
+            epsilon_limit=self.dp_total_epsilon,
+            event_sensitivity=self.max_events_per_contributor_per_cell,
+        )
+        private_cells = tuple(
+            self._round_private_cell(WeatherCell(**{**cell, "signal": Signal(cell["signal"])}))
+            for cell in released
+        )
+        return private_cells, receipt, snapshot_hash, exported_at
+
+    def _publish_artifact(
+        self,
+        destination: Path,
+        artifact: bytes,
+        *,
+        artifact_kind: str,
+        course_key: str | None,
+        snapshot_hash: str,
+        exported_at: datetime,
+    ) -> None:
+        publish_artifact(
+            self.connection,
+            destination,
+            artifact,
+            scope=course_key or "*",
+            strategy="global" if course_key is None else "course-partitioned",
+            artifact_kind=artifact_kind,
+            exported_at=exported_at,
+            snapshot_hash=snapshot_hash,
             minimum_interval=timedelta(hours=self.minimum_export_interval_hours),
             ledger_key=self.ledger_key,
         )
-        return cells
 
-    def _coarsen(self, cell: WeatherCell) -> WeatherCell:
-        contributors = max(
-            self.minimum_group_size,
-            cell.contributor_count // self.count_granularity * self.count_granularity,
-        )
-        events = max(
-            contributors, cell.event_count // self.count_granularity * self.count_granularity
-        )
+    def _round_private_cell(self, cell: WeatherCell) -> WeatherCell:
+        """Round already-private estimates without consulting sensitive data."""
+        granularity = self.count_granularity
+        contributors = max(0, round(cell.contributor_count / granularity) * granularity)
+        events = max(contributors, round(cell.event_count / granularity) * granularity)
         return WeatherCell(
             cell.course_key,
             cell.activity_key,
@@ -307,16 +348,16 @@ class WeatherStore:
             cell.signal,
             events,
             contributors,
-            f"At least {events} minimized events from at least {contributors} pseudonymous contributors.",
+            cell.explanation,
             cell.recommendation,
         )
 
     def export_html(self, destination: Path, *, course_key: str | None = None) -> None:
-        cells = self._privacy_cells(course_key=course_key)
+        cells, receipt, snapshot_hash, exported_at = self._privacy_cells(course_key=course_key)
         rows = "".join(
             f"<tr><td>{escape(cell.activity_key)}</td><td>{escape(cell.language)}</td>"
             f"<td>{escape(cell.concept_id)}</td><td>{escape(cell.signal.value)}</td>"
-            f"<td>{cell.event_count}</td><td>{cell.contributor_count}+</td>"
+            f"<td>{cell.event_count}</td><td>{cell.contributor_count}</td>"
             f"<td>{escape(cell.recommendation)}</td></tr>"
             for cell in cells
         )
@@ -330,33 +371,16 @@ th,td{{border:1px solid #ccd;padding:.55rem;text-align:left}}th{{background:#eef
 {self.minimum_group_size} pseudonymous contributors are shown. Events expire after {self.retention_days} days.
 No conversation text, direct identity, token, or contributor hash is present in this report.
 Contributor linkage is pseudonymous and restricted to one cell and UTC day.</div>
+<p>Differentially private Laplace estimates are shown (ε={receipt.epsilon_per_release:g} for this
+memoized release; cumulative ε={receipt.epsilon_spent:g}/{receipt.epsilon_limit:g}). Counts may be zero
+or differ from exact internal aggregates.</p>
 <table><caption>Aggregated learning-difficulty signals</caption><thead><tr><th scope="col">Activity</th><th scope="col">Language</th><th scope="col">Concept</th><th scope="col">Signal</th>
 <th scope="col">Events</th><th scope="col">Contributors</th><th scope="col">Suggested intervention</th></tr></thead><tbody>{rows}</tbody></table></main></html>"""
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(html, "utf-8")
-
-
-def load_events(path: Path) -> tuple[MinimizedEvent, ...]:
-    data = json.loads(path.read_text("utf-8"))
-    allowed = {
-        "occurred_at",
-        "course_key",
-        "activity_key",
-        "language",
-        "concept_id",
-        "signal",
-        "contribution_token",
-    }
-    events = []
-    for index, item in enumerate(data["events"]):
-        unexpected = set(item) - allowed
-        if unexpected:
-            raise ValueError(
-                f"event {index} contains prohibited/unrecognized fields: {sorted(unexpected)}"
-            )
-        events.append(
-            MinimizedEvent(
-                signal=Signal(item["signal"]), **{k: v for k, v in item.items() if k != "signal"}
-            )
+        self._publish_artifact(
+            destination,
+            html.encode(),
+            artifact_kind="html",
+            course_key=course_key,
+            snapshot_hash=snapshot_hash,
+            exported_at=exported_at,
         )
-    return tuple(events)

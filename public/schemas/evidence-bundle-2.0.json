@@ -97,12 +97,22 @@
       "type": "object",
       "properties": {
         "semantic_evaluations_schema_version": {
-          "const": "1.0"
+          "enum": [
+            "1.0",
+            "2.0"
+          ]
         },
         "semantic_evaluations": {
           "type": "array",
           "items": {
-            "$ref": "https://eii.edu.eu/schemas/semantic-evaluation-record-1.0.json"
+            "oneOf": [
+              {
+                "$ref": "https://eii.edu.eu/schemas/semantic-evaluation-record-1.0.json"
+              },
+              {
+                "$ref": "https://eii.edu.eu/schemas/semantic-evaluation-record-2.0.json"
+              }
+            ]
           }
         },
         "semantic_evaluation_plan": {
@@ -122,7 +132,51 @@
           "semantic_evaluations_schema_version",
           "semantic_evaluations"
         ]
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "semantic_evaluations_schema_version": {
+                "const": "1.0"
+              }
+            },
+            "required": [
+              "semantic_evaluations_schema_version"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_evaluations": {
+                "items": {
+                  "$ref": "https://eii.edu.eu/schemas/semantic-evaluation-record-1.0.json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "semantic_evaluations_schema_version": {
+                "const": "2.0"
+              }
+            },
+            "required": [
+              "semantic_evaluations_schema_version"
+            ]
+          },
+          "then": {
+            "properties": {
+              "semantic_evaluations": {
+                "items": {
+                  "$ref": "https://eii.edu.eu/schemas/semantic-evaluation-record-2.0.json"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "locator": {
       "type": "object",

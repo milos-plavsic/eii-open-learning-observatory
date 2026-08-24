@@ -68,8 +68,8 @@ PROBES = (
     ),
     (
         "src/eii/weather_privacy.py",
-        "and previous[1] != payload_hash",
-        "and previous[1] == payload_hash",
+        "and previous[1] != snapshot_hash",
+        "and previous[1] == snapshot_hash",
         "tests.test_weather",
     ),
     (
@@ -110,8 +110,8 @@ PROBES = (
     ),
     (
         "src/eii/alignment_relationships.py",
-        "if left_translation or right_translation:\n        return -12.0",
-        "if left_translation or right_translation:\n        return 12.0",
+        "if left_translation and right_translation:\n        return PairScore(",
+        "if left_translation or right_translation:\n        return PairScore(",
         "tests.test_babelbridge",
     ),
     (
@@ -137,6 +137,18 @@ PROBES = (
         "and (bool(failures) or total_cost is None or total_cost > max_total_cost)",
         "and (not failures or total_cost is None or total_cost > max_total_cost)",
         "tests.test_semantic_consensus",
+    ),
+    (
+        "src/eii/semantic_aggregation.py",
+        "agreement = len(aligned) / panel_size",
+        "agreement = len(aligned) / len(judgments)",
+        "tests.test_semantic_consensus",
+    ),
+    (
+        "src/eii/weather_privacy.py",
+        "if row and not hmac.compare_digest(row[0], fingerprint):",
+        "if row and hmac.compare_digest(row[0], fingerprint):",
+        "tests.test_hardening_v4",
     ),
 )
 

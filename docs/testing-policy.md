@@ -11,11 +11,12 @@ Coverage is paired with:
 - Warning-as-error execution on every supported Python interpreter.
 - Assertions on observable behavior and failure modes.
 - Property and malformed-input tests for canonicalization and trust boundaries.
-- Twenty-two mutation probes for cryptography, persistence, PLCT conformance,
+- Twenty-four mutation probes for cryptography, persistence, PLCT conformance,
   release/SBOM evidence, safety integrity/decisions, privacy, model transport,
   retrieval, multilingual split/merge alignment, semantic abstention,
   consensus consistency, multilingual uncertainty matching, scoped alignment,
-  status projection, canonical quotation, snapshot signing and incomplete metering.
+  status projection, canonical quotation, snapshot signing, incomplete metering,
+  configured-panel denominators and ledger-key binding.
 - Clean wheel/sdist installation and multi-platform smoke tests.
 - Reproducible-build comparison and artifact verification.
 - Static security and dependency auditing.

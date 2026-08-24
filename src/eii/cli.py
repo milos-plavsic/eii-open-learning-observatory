@@ -151,15 +151,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "weather":
         secret = _secret_bytes(args.secret_file, "weather secret", 32, command_parser)
-        ledger = (
-            _secret_bytes(args.ledger_key_file, "weather ledger key", 32, command_parser)
-            if args.ledger_key_file
-            else secret
-        )
+        ledger = _secret_bytes(args.ledger_key_file, "weather ledger key", 32, command_parser)
         with WeatherStore(
             args.database,
             secret=secret,
             minimum_group_size=args.minimum_group_size,
+            dp_epsilon=args.dp_epsilon,
+            dp_total_epsilon=args.dp_total_epsilon,
             retention_days=args.retention_days,
             count_granularity=args.count_granularity,
             minimum_export_interval_hours=args.minimum_export_interval_hours,

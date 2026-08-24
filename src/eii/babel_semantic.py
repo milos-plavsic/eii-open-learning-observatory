@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from .domain import ContentBlock, CourseRelease, EvidenceRef, Finding, ModelRun, Severity
 from .semantic_records import SemanticEvaluationRecord, model_run_id
@@ -15,12 +15,40 @@ FindingFactory = Callable[
 ]
 
 
+def evidence_refs(group: Sequence[CourseBlock]) -> tuple[EvidenceRef, ...]:
+    return tuple(EvidenceRef(r.id, b.id, b.hash, b.text[:240] or None) for r, b in group)
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticReleasePolicy:
+    confidence: float
+    agreement: float
+    maximum_minority_confidence: float | None
+    require_unanimity: bool
+    maximum_failed_members: int = 0
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.confidence <= 1 or not 0.5 <= self.agreement <= 1:
+            raise ValueError("semantic confidence and agreement must be between zero and one")
+        if (
+            self.maximum_minority_confidence is not None
+            and not 0 <= self.maximum_minority_confidence <= 1
+        ):
+            raise ValueError("semantic maximum minority confidence must be between zero and one")
+        if isinstance(self.maximum_failed_members, bool) or self.maximum_failed_members < 0:
+            raise ValueError("semantic maximum failed members must be a non-negative integer")
+
+
 def semantic_findings(
     comparison_group: Sequence[CourseBlock],
     evidence_group: Sequence[CourseBlock],
     relationship_id: str,
     comparator: SemanticComparator,
     threshold: float,
+    minimum_agreement: float,
+    maximum_minority_confidence: float | None,
+    require_unanimity: bool,
+    maximum_failed_members: int,
     finding: FindingFactory,
 ) -> tuple[list[Finding], list[ModelRun], list[SemanticEvaluationRecord]]:
     base_release, base_block = comparison_group[0]
@@ -34,7 +62,21 @@ def semantic_findings(
         runs.append(judgment.model_run)
         outcome = (
             "abstained"
-            if judgment.abstained or judgment.confidence < threshold
+            if judgment.abstained
+            or judgment.confidence < threshold
+            or (
+                judgment.agreement_ratio is not None
+                and (
+                    judgment.agreement_ratio < minimum_agreement
+                    or (require_unanimity and judgment.agreement_ratio < 1)
+                )
+            )
+            or (
+                maximum_minority_confidence is not None
+                and judgment.minority_mean_confidence is not None
+                and judgment.minority_mean_confidence > maximum_minority_confidence
+            )
+            or judgment.failed_member_count > maximum_failed_members
             else "equivalent"
             if judgment.equivalent
             else "drift"
@@ -43,16 +85,35 @@ def semantic_findings(
         right_evidence = _release_refs(evidence_group, release.id)
         evaluations.append(
             SemanticEvaluationRecord(
-                "",
-                relationship_id,
-                left_evidence,
-                right_evidence,
-                outcome,
-                judgment.confidence,
-                dict(judgment.properties),
-                judgment.explanation,
-                model_run_id(judgment.model_run),
-                judgment.member_judgments,
+                id="",
+                relationship_id=relationship_id,
+                left_evidence=left_evidence,
+                right_evidence=right_evidence,
+                outcome=outcome,
+                decision_score=judgment.confidence,
+                properties=dict(judgment.properties),
+                explanation=judgment.explanation,
+                model_run_id=model_run_id(judgment.model_run),
+                member_judgments=judgment.member_judgments,
+                decision_signals={
+                    "agreement_ratio": judgment.agreement_ratio,
+                    "majority_mean_confidence": judgment.majority_mean_confidence
+                    if judgment.majority_mean_confidence is not None
+                    else judgment.confidence,
+                    "minority_mean_confidence": judgment.minority_mean_confidence,
+                    "confidence_kind": "uncalibrated_member_self_report",
+                    "property_signals": judgment.property_signals
+                    or {
+                        name: {
+                            "agreement_ratio": None,
+                            "majority_mean_confidence": None,
+                            "minority_mean_confidence": None,
+                        }
+                        for name in sorted(judgment.properties)
+                    },
+                    "completion_ratio": judgment.completion_ratio,
+                    "failed_member_count": judgment.failed_member_count,
+                },
             )
         )
         if outcome == "abstained":

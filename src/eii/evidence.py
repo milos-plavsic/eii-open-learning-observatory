@@ -300,9 +300,16 @@ def _validate_semantic_graph(
     )
     if not has_semantics:
         return
-    if metadata.get("semantic_evaluations_schema_version") != "1.0":
+    schema_version = metadata.get("semantic_evaluations_schema_version")
+    if schema_version not in {"1.0", "2.0"}:
         raise ValueError("evidence bundle has no supported semantic evaluation schema")
-    records = parse_semantic_records(metadata.get("semantic_evaluations"))
+    serialized_records = metadata.get("semantic_evaluations")
+    if not isinstance(serialized_records, (list, tuple)) or any(
+        not isinstance(record, Mapping) or record.get("schema_version") != schema_version
+        for record in serialized_records
+    ):
+        raise ValueError("semantic evaluation records do not match their declared schema")
+    records = parse_semantic_records(serialized_records)
     if len({record.id for record in records}) != len(records):
         raise ValueError("semantic evaluation identifiers must be unique")
     runs = {model_run_id(run): run for run in bundle.model_runs}

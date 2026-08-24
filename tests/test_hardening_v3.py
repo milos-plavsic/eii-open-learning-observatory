@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -258,10 +258,10 @@ class HardeningV3Tests(unittest.TestCase):
                 store.export(root / "one.json", now=datetime.now(UTC))
                 self.assertIsNotNone(store.verify_export_ledger())
                 with self.assertRaises(sqlite3.IntegrityError):
-                    store.connection.execute("DELETE FROM privacy_export_audit")
-                store.connection.execute("DROP TRIGGER privacy_export_audit_no_update")
+                    store.connection.execute("DELETE FROM privacy_export_audit_v2")
+                store.connection.execute("DROP TRIGGER privacy_export_audit_v2_no_update")
                 store.connection.execute(
-                    "UPDATE privacy_export_audit SET record_hash=?", ("0" * 64,)
+                    "UPDATE privacy_export_audit_v2 SET record_hash=?", ("0" * 64,)
                 )
                 store.connection.commit()
                 with self.assertRaisesRegex(ValueError, "authentication"):
@@ -278,10 +278,10 @@ class HardeningV3Tests(unittest.TestCase):
             with WeatherStore(chain_db, secret=secret, ledger_key=ledger) as store:
                 now = datetime.now(UTC)
                 store.export(root / "a.json", now=now)
-                store.export(root / "b.json", now=now)
-                store.connection.execute("DROP TRIGGER privacy_export_audit_no_update")
+                store.export(root / "b.json", now=now + timedelta(microseconds=1))
+                store.connection.execute("DROP TRIGGER privacy_export_audit_v2_no_update")
                 store.connection.execute(
-                    "UPDATE privacy_export_audit SET previous_hash='broken' WHERE sequence=2"
+                    "UPDATE privacy_export_audit_v2 SET previous_hash='broken' WHERE sequence=2"
                 )
                 store.connection.commit()
                 with self.assertRaisesRegex(ValueError, "discontinuous"):

@@ -14,7 +14,7 @@
     },
     {
       "name": "evidence-bundle-2.0.json",
-      "sha256": "5ca585f984318af7b50f2effde734f78c59c9d2fd473e5110c896a1608b3bc34"
+      "sha256": "13361c9d758a6304d4eb8a29fc9db7ea83df6edab696ecf550eb45e08990bbc9"
     },
     {
       "name": "external-validation-record-v1.json",
@@ -57,12 +57,20 @@
       "sha256": "80ed5ea2fe98de4cd87276fc779f4559dfc5d2be82eda22d06041159fc2249e9"
     },
     {
+      "name": "semantic-evaluation-record-2.0.json",
+      "sha256": "88c8b6898a5ce9865f2fd0a0c4580bcc67f3c0d7434f173e5e064fee8bd0a86f"
+    },
+    {
       "name": "semantic-evaluator-policy-1.0.json",
-      "sha256": "e2107a08430187246a60c96e0355a7d4416737f9f568598fcb594bb19a14c2ae"
+      "sha256": "7d1e7b83c04c682fd031c93979c944b508086af78a2fc61cbf5d505d6d6e1f5d"
     },
     {
       "name": "weather-map-2.0.json",
       "sha256": "ef61f3d9520aec7b50fdd8523d691d0ec381eb65c866d3e6d3576ee063e24822"
+    },
+    {
+      "name": "weather-map-3.0.json",
+      "sha256": "62a0eeeb19accdff5c2169b78137074de2aa1dea75429754ca14628c8571cf93"
     }
   ]
 }

@@ -40,6 +40,23 @@
       "type": "integer",
       "minimum": 0
     },
+    "minimum_agreement_ratio": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 1
+    },
+    "maximum_minority_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "require_unanimity": {
+      "type": "boolean"
+    },
+    "maximum_failed_members": {
+      "type": "integer",
+      "minimum": 0
+    },
     "evaluators": {
       "type": "array",
       "minItems": 3,

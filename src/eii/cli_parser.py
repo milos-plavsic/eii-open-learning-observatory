@@ -35,6 +35,28 @@ def _add_appliance_server_arguments(server: argparse.ArgumentParser) -> None:
     _add_audit_log_arguments(server)
 
 
+def _add_weather_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    weather = commands.add_parser(
+        "weather", help="ingest minimized events and export private aggregates"
+    )
+    weather.add_argument("events", type=Path)
+    weather.add_argument("--database", type=Path, required=True)
+    weather.add_argument("--secret-file", type=Path, required=True)
+    weather.add_argument("--ledger-key-file", type=Path, required=True)
+    weather.add_argument("--minimum-group-size", type=int, default=5)
+    weather.add_argument("--retention-days", type=int, default=30)
+    weather.add_argument("--count-granularity", type=int, default=2)
+    weather.add_argument("--minimum-export-interval-hours", type=int, default=24)
+    weather.add_argument("--dp-epsilon", type=float, default=1.0)
+    weather.add_argument("--dp-total-epsilon", type=float, default=10.0)
+    weather.add_argument("--key-epoch", default="v1")
+    weather.add_argument("--course-key")
+    weather.add_argument("--output", type=Path, default=Path("weather-map.json"))
+    weather.add_argument("--html-output", type=Path)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="eii", description="EII Open Learning Observatory")
     result.add_argument("--version", action="version", version=__version__)
@@ -107,21 +129,7 @@ def parser() -> argparse.ArgumentParser:
         help="also apply the built-in release-authorization policy",
     )
 
-    weather = commands.add_parser(
-        "weather", help="ingest minimized events and export private aggregates"
-    )
-    weather.add_argument("events", type=Path)
-    weather.add_argument("--database", type=Path, required=True)
-    weather.add_argument("--secret-file", type=Path, required=True)
-    weather.add_argument("--ledger-key-file", type=Path)
-    weather.add_argument("--minimum-group-size", type=int, default=5)
-    weather.add_argument("--retention-days", type=int, default=30)
-    weather.add_argument("--count-granularity", type=int, default=2)
-    weather.add_argument("--minimum-export-interval-hours", type=int, default=24)
-    weather.add_argument("--key-epoch", default="v1")
-    weather.add_argument("--course-key")
-    weather.add_argument("--output", type=Path, default=Path("weather-map.json"))
-    weather.add_argument("--html-output", type=Path)
+    _add_weather_parser(commands)
 
     check = commands.add_parser("appliance-check", help="assess hardware for offline model serving")
     check.add_argument("--path", type=Path, default=Path("."))
