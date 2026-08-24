@@ -58,8 +58,12 @@ jobs:
         run: |
           REVISION=$(python -c 'import json; print(json.load(open("approved/release-evidence.json"))["revision"])')
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
-          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref="refs/tags/v$VERSION" -f sha="$REVISION"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --jq .object.sha)" = "$REVISION"
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/v$VERSION" -f sha="$REVISION"
+          fi
           cat > release-notes.md <<EOF
           The first public alpha of the EII Open Learning Observatory: an independent,
           open-source evidence and quality layer for multilingual digital courses and
@@ -79,6 +83,7 @@ jobs:
 
           Verified release built and promoted from revision $REVISION.
           EOF
-          gh release create "v$VERSION" approved/* --verify-tag --latest \
+          gh release create "v$VERSION" approved/* --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --latest \
             --title "EII Open Learning Observatory $VERSION — First Public Alpha" \
             --notes-file release-notes.md
