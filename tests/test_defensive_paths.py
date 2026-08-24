@@ -537,7 +537,7 @@ class ReportsCurriculumTutorWeatherTests(unittest.TestCase):
         tutor = BilingualGroundedTutor(
             client_response("answer\nCITATIONS:"),
             (course,),
-            (Alignment("irrelevant", ((course.id, "not-selected"),), 0.5, "test"),),
+            (Alignment("irrelevant", ((course.id, "not-selected"),), 0.5, "explicit-concept"),),
         )
         with self.assertRaisesRegex(ValueError, "no release"):
             tutor.answer("q", reading_language="sr", answer_language="en")

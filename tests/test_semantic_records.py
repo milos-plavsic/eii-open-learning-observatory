@@ -98,6 +98,39 @@ class SemanticRecordTests(unittest.TestCase):
         ]
         self.assertEqual(len(parse_semantic_records([changed])[0].member_judgments), 2)
 
+        for signals, message in (
+            ({}, "signals do not match"),
+            (
+                {
+                    "agreement_ratio": 2,
+                    "majority_mean_confidence": None,
+                    "minority_mean_confidence": None,
+                    "confidence_kind": "uncalibrated_member_self_report",
+                    "property_signals": {},
+                    "completion_ratio": None,
+                    "failed_member_count": 0,
+                },
+                "between zero and one",
+            ),
+            (
+                {
+                    "agreement_ratio": None,
+                    "majority_mean_confidence": None,
+                    "minority_mean_confidence": None,
+                    "confidence_kind": "probability",
+                    "property_signals": {},
+                    "completion_ratio": None,
+                    "failed_member_count": 0,
+                },
+                "unsupported",
+            ),
+        ):
+            changed = dict(document)
+            changed["decision_signals"] = signals
+            changed["id"] = ""
+            with self.assertRaisesRegex(ValueError, message):
+                parse_semantic_records([changed])
+
 
 if __name__ == "__main__":
     unittest.main()

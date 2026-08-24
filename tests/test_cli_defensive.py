@@ -325,6 +325,8 @@ class CliDefensiveTests(unittest.TestCase):
                         str(root / "db"),
                         "--secret-file",
                         str(short),
+                        "--ledger-key-file",
+                        str(short),
                     ]
                 )
             source = root / "source"

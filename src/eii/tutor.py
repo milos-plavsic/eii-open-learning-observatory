@@ -108,10 +108,10 @@ class BilingualGroundedTutor:
             for member in alignment.members:
                 release, block = self.blocks[member]
                 selected[member] = RetrievedEvidence(
-                    block.id, block.hash, block.text, alignment.confidence
+                    block.id, block.hash, block.text, alignment.alignment_score
                 )
                 texts.add(_semantic_fingerprint(block.text))
-            disagreement |= len(texts) > 1 and alignment.confidence >= 0.9
+            disagreement |= len(texts) > 1 and alignment.method == "explicit-translation-id"
         evidence = tuple(selected.values())
         context_parts = []
         for (release_id, block_id), item in selected.items():

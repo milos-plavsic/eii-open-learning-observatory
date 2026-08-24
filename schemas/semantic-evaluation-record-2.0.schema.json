@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/semantic-evaluation-record-2.0.json",
+  "title": "EII Semantic Evaluation Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "relationship_id", "left_evidence", "right_evidence", "outcome", "decision_score", "properties", "explanation", "model_run_id", "member_judgments", "decision_signals", "schema_version"],
+  "properties": {
+    "id": {"$ref": "#/$defs/hash"},
+    "relationship_id": {"type": "string", "minLength": 1},
+    "left_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "right_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "outcome": {"enum": ["equivalent", "drift", "abstained"]},
+    "decision_score": {"type": "number", "minimum": 0, "maximum": 1, "deprecated": true, "description": "Compatibility projection of majority_mean_confidence; never sufficient as a standalone release gate."},
+    "properties": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "explanation": {"type": "string", "minLength": 1},
+    "model_run_id": {"$ref": "#/$defs/hash"},
+    "member_judgments": {"type": "array", "items": {"oneOf": [{"$ref": "#/$defs/memberSuccess"}, {"$ref": "#/$defs/memberFailure"}]}},
+    "decision_signals": {
+      "type": "object", "additionalProperties": false,
+      "required": ["agreement_ratio", "majority_mean_confidence", "minority_mean_confidence", "confidence_kind", "property_signals", "completion_ratio", "failed_member_count"],
+      "properties": {
+        "agreement_ratio": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "majority_mean_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "minority_mean_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "confidence_kind": {"const": "uncalibrated_member_self_report"},
+        "completion_ratio": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "failed_member_count": {"type": "integer", "minimum": 0},
+        "property_signals": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false,
+            "required": ["agreement_ratio", "majority_mean_confidence", "minority_mean_confidence"],
+            "properties": {
+              "agreement_ratio": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+              "majority_mean_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+              "minority_mean_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+            }
+          }
+        }
+      }
+    },
+    "schema_version": {"const": "2.0"}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "memberSuccess": {
+      "type": "object", "additionalProperties": false,
+      "required": ["equivalent", "confidence", "properties", "explanation", "model_run"],
+      "properties": {
+        "equivalent": {"type": "boolean"}, "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "properties": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "explanation": {"type": "string", "minLength": 1}, "model_run": {"type": "object"}
+      }
+    },
+    "memberFailure": {
+      "type": "object", "additionalProperties": false,
+      "required": ["member_index", "error_type"],
+      "properties": {
+        "member_index": {"type": "integer", "minimum": 0}, "error_type": {"type": "string", "minLength": 1},
+        "message_hash": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["course_release_id", "block_id", "block_hash", "excerpt"],
+      "properties": {
+        "course_release_id": {"type": "string", "minLength": 1},
+        "block_id": {"type": "string", "minLength": 1},
+        "block_hash": {"$ref": "#/$defs/hash"},
+        "excerpt": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

@@ -97,9 +97,9 @@ class LLMSemanticComparator:
 class ConsensusSemanticComparator:
     """Combine distinct configured comparators and retain complete provenance.
 
-    Confidence is the observed agreement ratio multiplied by the mean member
-    confidence. It is an operational decision signal, not a calibrated
-    probability; BabelBridge may abstain below its configured threshold.
+    Structural agreement and evaluator self-reported confidence remain separate.
+    Neither signal is a calibrated probability; BabelBridge applies its configured
+    threshold to the winning side's mean self-report and preserves dissent.
     """
 
     def __init__(
@@ -111,6 +111,7 @@ class ConsensusSemanticComparator:
         max_total_cost: float | None = None,
         max_total_tokens: int | None = None,
         max_outstanding_panels: int = 1,
+        max_failed_members: int = 0,
     ):
         if len(comparators) < 3 or len(comparators) % 2 == 0:
             raise ValueError(
@@ -131,6 +132,9 @@ class ConsensusSemanticComparator:
             raise ValueError("semantic consensus token budget must be a positive integer")
         self.max_total_cost = max_total_cost
         self.max_total_tokens = max_total_tokens
+        if isinstance(max_failed_members, bool) or not 0 <= max_failed_members < len(comparators):
+            raise ValueError("maximum failed semantic members must be within the panel")
+        self.max_failed_members = max_failed_members
         if max_outstanding_panels < 1:
             raise ValueError("maximum outstanding semantic panels must be positive")
         self._panel_capacity = threading.BoundedSemaphore(max_outstanding_panels)
@@ -249,7 +253,7 @@ class ConsensusSemanticComparator:
         run = ModelRun(
             "consensus",
             "unavailable-panel",
-            "semantic-consensus-v2",
+            "semantic-consensus-v3",
             {
                 "panel_size": len(self.comparators),
                 "quorum": self.quorum,
@@ -283,4 +287,5 @@ class ConsensusSemanticComparator:
             quorum=self.quorum,
             max_total_cost=self.max_total_cost,
             max_total_tokens=self.max_total_tokens,
+            max_failed_members=self.max_failed_members,
         )

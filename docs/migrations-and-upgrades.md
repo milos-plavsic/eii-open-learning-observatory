@@ -25,7 +25,15 @@ budgets per course scope. New contributions use key-epoch, day and cell-scoped
 pseudonyms. Restore a pre-schema-5 backup with the old executable if historical
 minimized rows must be retained; they are intentionally not carried forward.
 
-Generate secrets with `weather-key-generate`. Rotate only with
+Schema 6 adds persistent differential-privacy budgets and memoized releases plus
+the exact-artifact v2 export ledger. Schema 7 binds the independent ledger key and
+adds an authenticated publication journal. Schema 8 records the partition strategy
+and prior artifact hash in that journal, allowing deterministic recovery at every
+filesystem/database crash boundary. Opening the database authenticates the complete
+ledger and finishes or rolls back journaled publications before accepting work.
+
+Generate the linkage and ledger secrets separately with `weather-key-generate`.
+Treat the ledger key as durable recovery material. Rotate the linkage key only with
 `weather-key-rotate`, which requires the current and new secrets, a distinct
 stable ledger key, explicit old/new epoch names, and a backup destination.
 

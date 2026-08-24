@@ -18,6 +18,12 @@ class SemanticJudgment:
     model_run: ModelRun
     abstained: bool = False
     member_judgments: tuple[Mapping[str, object], ...] = ()
+    agreement_ratio: float | None = None
+    majority_mean_confidence: float | None = None
+    minority_mean_confidence: float | None = None
+    property_signals: Mapping[str, Mapping[str, float | None]] | None = None
+    completion_ratio: float | None = None
+    failed_member_count: int = 0
 
 
 class SemanticComparator(Protocol):

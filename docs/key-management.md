@@ -21,7 +21,11 @@ person's employment, qualifications or delegated authority. Each review's
 be replayed after the fixture, answer, retrieval or automatic evaluation changes.
 
 Generate Classroom Weather secrets with `weather-key-generate`. Keep the
-contribution-linkage key separate from the stable export-ledger key. Rotation is
+rotating contribution-linkage key separate from the stable export-ledger key;
+both are mandatory files for CLI operation. The database binds the ledger-key
+fingerprint on first open and rejects substitution. Back up the ledger key in the
+institutional secret store: losing it makes prior export history unverifiable, while
+reusing the linkage key as the ledger key makes safe unlinkability rotation impossible. Rotation is
 an explicit `weather-key-rotate` operation and always creates a verified backup
 before purging records linked under the prior epoch.
 

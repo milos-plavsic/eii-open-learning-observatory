@@ -25,7 +25,37 @@ class _Comparator:
         return self.judgment
 
 
+class _FailingComparator:
+    def compare(self, *args, **kwargs):
+        raise TimeoutError("provider timed out")
+
+
 class SemanticConsensusTests(unittest.TestCase):
+    def test_failed_members_remain_in_configured_panel_denominator(self):
+        block = ContentBlock("b", UnitKind.SECTION, "T", "X", 1, SourceLocator("x", "r", "p"))
+        panel = (
+            _Comparator(True, 0.9, "one"),
+            _Comparator(True, 0.9, "two"),
+            _Comparator(True, 0.9, "three"),
+            _FailingComparator(),
+            _FailingComparator(),
+        )
+        strict = ConsensusSemanticComparator(panel).compare(
+            block, block, left_language="en", right_language="sr"
+        )
+        self.assertTrue(strict.abstained)
+        self.assertEqual(strict.agreement_ratio, 0.6)
+        self.assertEqual(strict.completion_ratio, 0.6)
+        self.assertEqual(strict.failed_member_count, 2)
+        self.assertEqual(
+            strict.model_run.configuration["decision_majority_denominator"], "configured_panel"
+        )
+        tolerant = ConsensusSemanticComparator(panel, max_failed_members=2).compare(
+            block, block, left_language="en", right_language="sr"
+        )
+        self.assertFalse(tolerant.abstained)
+        self.assertEqual(tolerant.agreement_ratio, 0.6)
+
     def test_requires_multiple_independent_comparators(self):
         with self.assertRaisesRegex(ValueError, "odd panel"):
             ConsensusSemanticComparator((_Comparator(True, 1, "one"),))
@@ -90,12 +120,36 @@ class SemanticConsensusTests(unittest.TestCase):
         )
         result = comparator.compare(block, block, left_language="en", right_language="sr")
         self.assertTrue(result.equivalent)
-        self.assertAlmostEqual(result.confidence, (2 / 3) * 0.8)
+        self.assertAlmostEqual(result.confidence, 0.8)
+        self.assertAlmostEqual(result.agreement_ratio, 2 / 3)
+        self.assertAlmostEqual(result.majority_mean_confidence, 0.8)
+        self.assertAlmostEqual(result.minority_mean_confidence, 0.8)
+        self.assertEqual(result.model_run.prompt_version, "semantic-consensus-v3")
         self.assertTrue(result.properties["examples_valid"])
         self.assertTrue(result.properties["same_meaning"])
+        property_signal = result.property_signals["same_meaning"]
+        self.assertAlmostEqual(property_signal["agreement_ratio"], 2 / 3)
+        self.assertIsNone(property_signal["majority_mean_confidence"])
+        self.assertIsNone(property_signal["minority_mean_confidence"])
         self.assertEqual(result.model_run.configuration["member_count"], 3)
         self.assertEqual(len(result.model_run.configuration["member_judgments"]), 3)
         self.assertIn("one | two | three", result.explanation)
+
+    def test_confident_dissent_cannot_increase_majority_confidence(self):
+        block = ContentBlock("b", UnitKind.SECTION, "T", "X", 1, SourceLocator("x", "r", "p"))
+        results = []
+        for dissent in (0.99, 0.5):
+            panel = ConsensusSemanticComparator(
+                (
+                    _Comparator(True, 0.9, f"one-{dissent}"),
+                    _Comparator(True, 0.9, f"two-{dissent}"),
+                    _Comparator(False, dissent, f"three-{dissent}"),
+                )
+            )
+            results.append(panel.compare(block, block, left_language="en", right_language="sr"))
+        self.assertEqual([result.confidence for result in results], [0.9, 0.9])
+        self.assertEqual([result.agreement_ratio for result in results], [2 / 3, 2 / 3])
+        self.assertEqual([result.minority_mean_confidence for result in results], [0.99, 0.5])
 
     def test_abstains_when_whole_and_property_consensus_conflict(self):
         comparator = ConsensusSemanticComparator(
@@ -241,6 +295,8 @@ class SemanticConsensusTests(unittest.TestCase):
         ).compare(block, block, left_language="en", right_language="sr")
         self.assertTrue(result.abstained)
         self.assertFalse(result.model_run.configuration["cost_metering_complete"])
+        self.assertTrue(result.model_run.configuration["decision_signals"])
+        self.assertIn("evaluation budget", result.explanation)
 
     def test_rejects_duplicate_identities_invalid_scores_and_property_contracts(self):
         block = ContentBlock("b", UnitKind.SECTION, "T", "X", 1, SourceLocator("x", "r", "p"))

@@ -20,15 +20,31 @@ period (default 30 days), and expiry runs before each CLI import. Export files
 contain the applicable threshold and retention policy and never contain hashes,
 tokens, direct identifiers, or conversation text.
 
-Exported counts are rounded down to a configured granularity. A database commits to
+After exact small-cell suppression, exported event and contributor counts receive
+independent Laplace noise under a persistent, memoized epsilon budget and are then
+rounded to a configured granularity. The formal protected unit for those released
+count vectors is one bounded contributor/cell/UTC-day. Empty exports consume no
+budget, and an export rejected by interval or partition policy is rejected before
+noise generation. A database commits to
 either global or course-partitioned exports; mixing both query families is rejected to
 avoid overlapping-query subtraction. The database records every export in a
-hash-chained append-only ledger and refuses a changed export inside the minimum
+keyed, hash-chained append-only ledger binding the exact JSON or HTML bytes and refuses a changed export inside the minimum
 interval (24 hours by default), including across JSON and HTML views. Each key epoch is
 bound to one secret, a secret cannot be relabeled as another epoch, and activating a
 new epoch purges old linkage rows.
-This reduces short-window differencing risk. It is disclosure control, not a
-claim of formal differential privacy; deployment privacy review remains required.
+The independently managed ledger key is bound to the database and must remain stable
+across linkage-key rotation. Artifact replacement uses an authenticated, fsync-backed
+recovery journal: startup either completes an installed artifact's ledger record or
+restores the prior bytes. Verification authenticates the complete append-only chain,
+not the mutable latest-export index. A failed artifact publication conservatively
+retains any privacy budget already spent; retrying the same memoized snapshot reuses
+the same noisy release and spends no additional epsilon.
+This supplies differential privacy for each released fixed count vector, under the
+stated protected unit and sequential-composition budget. It does not make the full
+sparse report end-to-end differentially private: cell selection still depends on an
+exact threshold over a data-dependent set of cells. A fixed public cell universe or
+reviewed private-histogram mechanism is required before making that stronger claim.
+Deployment privacy review remains required.
 
 The ledger detects local history alteration but cannot prevent an operator from cloning
 or rolling back an entire database. High-assurance deployments need protected backups,

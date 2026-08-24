@@ -12,7 +12,7 @@ grounded tutor without operating the quality system.
 
 | Capability | Required observable result |
 |---|---|
-| BabelBridge | Align language units, expose confidence/method, detect structural and literal drift, enforce terminology, accept semantic comparator judgments, retain reviewer decisions. |
+| BabelBridge | Align language units, expose a versioned non-probabilistic score/method, detect structural and literal drift, enforce terminology, accept semantic comparator judgments, retain reviewer decisions. |
 | Curriculum MRI | Map objectives through concepts and prerequisites to evidence and assessments; report gaps with source evidence; emit HTML, JSON and prioritized backlog. |
 | Tutor Safety Case | Replay exact questions and retrieval, evaluate explicit claims, preserve configuration and hashes, apply release gates and compare regressions. |
 | Weather Map | Reject conversation/identity fields, aggregate locally, suppress small cohorts, expire events and explain every disclosed metric. |

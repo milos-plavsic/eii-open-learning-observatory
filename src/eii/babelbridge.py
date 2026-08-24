@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -13,6 +13,8 @@ from .alignment_relationships import (
     TranslationUnitStatus as TranslationUnitStatus,
 )
 from .alignment_relationships import (
+    alignment_identity,
+    group_score_components,
     pair_score,
     semantic_group,
     translation_key,
@@ -21,11 +23,10 @@ from .alignment_relationships import (
 from .alignment_relationships import (
     translation_status as translation_status,
 )
-from .babel_semantic import semantic_findings
+from .babel_semantic import SemanticReleasePolicy, evidence_refs, semantic_findings
 from .domain import (
     ContentBlock,
     CourseRelease,
-    EvidenceRef,
     Finding,
     ModelRun,
     Severity,
@@ -36,8 +37,10 @@ from .literal_patterns import NUMBER_PATTERN
 from .semantic_records import SemanticEvaluationRecord
 from .semantics import SemanticComparator
 
-_CODE = re.compile(r"`([^`]+)`|```(?:\w+)?\s*(.*?)```", re.DOTALL)
-_LINK = re.compile(r"!?\[[^]]*]\(([^)]+)\)")
+_CODE, _LINK = (
+    re.compile(r"`([^`]+)`|```(?:\w+)?\s*(.*?)```", re.DOTALL),
+    re.compile(r"!?\[[^]]*]\(([^)]+)\)"),
+)
 CourseBlock = tuple[CourseRelease, ContentBlock]
 
 
@@ -59,30 +62,30 @@ def _similarity(left: str, right: str) -> float:
 
 
 def _contains_term(text: str, term: str) -> bool:
-    return bool(
-        re.search(r"(?<!\w)" + re.escape(term.casefold()) + r"(?!\w)", text.casefold(), re.UNICODE)
-    )
-
-
-def _refs(release_blocks: Iterable[tuple[CourseRelease, ContentBlock]]) -> tuple[EvidenceRef, ...]:
-    return tuple(EvidenceRef(r.id, b.id, b.hash, b.text[:240] or None) for r, b in release_blocks)
+    pattern = r"(?<!\w)" + re.escape(term.casefold()) + r"(?!\w)"
+    return bool(re.search(pattern, text.casefold(), re.UNICODE))
 
 
 class BabelBridge:
-    """Align releases and flag objective, structure and literal drift.
-
-    Deterministic heuristics remain labeled; optional model judgments retain provenance.
-    """
+    """Align releases and flag deterministic or model-assisted drift evidence."""
 
     def __init__(
         self,
         *,
         semantic_decision_threshold: float = 0.7,
+        semantic_minimum_agreement: float = 0.5,
+        semantic_maximum_minority_confidence: float | None = None,
+        semantic_require_unanimity: bool = False,
+        semantic_maximum_failed_members: int = 0,
         max_semantic_comparisons: int = 100,
     ):
-        if not 0 <= semantic_decision_threshold <= 1:
-            raise ValueError("semantic decision threshold must be between zero and one")
-        self.semantic_decision_threshold = semantic_decision_threshold
+        self.semantic_policy = SemanticReleasePolicy(
+            semantic_decision_threshold,
+            semantic_minimum_agreement,
+            semantic_maximum_minority_confidence,
+            semantic_require_unanimity,
+            semantic_maximum_failed_members,
+        )
         if max_semantic_comparisons < 1:
             raise ValueError("maximum semantic comparisons must be positive")
         self.max_semantic_comparisons = max_semantic_comparisons
@@ -157,7 +160,11 @@ class BabelBridge:
                     group,
                     relation,
                     comparator,
-                    self.semantic_decision_threshold,
+                    self.semantic_policy.confidence,
+                    self.semantic_policy.agreement,
+                    self.semantic_policy.maximum_minority_confidence,
+                    self.semantic_policy.require_unanimity,
+                    self.semantic_policy.maximum_failed_members,
                     self._finding,
                 )
                 findings.extend(semantic)
@@ -219,12 +226,7 @@ class BabelBridge:
     def _align_release(
         cls, base: CourseRelease, target: CourseRelease
     ) -> tuple[dict[int, list[int]], list[int]]:
-        """Globally align ordered hierarchies, preserving explicit many-to-one identities.
-
-        A declared ``translation_id`` is authoritative and may map multiple target
-        blocks to one canonical block. Remaining blocks use a monotonic dynamic
-        program, so a target insertion does not shift every subsequent match.
-        """
+        """Globally align hierarchies while preserving explicit many-to-one identities."""
         matches: dict[int, list[int]] = {}
         used_base: set[int] = set()
         used_target: set[int] = set()
@@ -314,22 +316,16 @@ class BabelBridge:
 
     @staticmethod
     def _alignment(group: Sequence[CourseBlock]) -> Alignment:
-        _first_release, first_block = group[0]
-        declared = {translation_key(block) for _, block in group if translation_key(block)}
-        explicit = set(first_block.concepts)
-        for _, block in group[1:]:
-            explicit &= set(block.concepts)
-        if len(declared) == 1:
-            concept_id = "translation:" + str(next(iter(declared)))
-            confidence, method = 0.99, "explicit-translation-id"
-        elif explicit:
-            concept_id = sorted(explicit)[0]
-            confidence, method = 0.95, "explicit-concept"
-        else:
-            seed = [(release.canonical_course_id, block.order) for release, block in group]
-            concept_id = "derived:" + content_hash(seed).split(":", 1)[1][:20]
-            confidence, method = 0.7, "title-or-order-heuristic"
-        return Alignment(concept_id, tuple((r.id, b.id) for r, b in group), confidence, method)
+        concept_id, method = alignment_identity(group)
+        alignment_score, components = group_score_components(group, _similarity)
+        return Alignment(
+            concept_id,
+            tuple((r.id, b.id) for r, b in group),
+            None,
+            method,
+            alignment_score=alignment_score,
+            score_components=components,
+        )
 
     def _group_findings(
         self, group: Sequence[CourseBlock], releases: tuple[CourseRelease, ...]
@@ -412,11 +408,11 @@ class BabelBridge:
         explanation: str,
         severity: Severity,
         confidence: float,
-        group: Iterable[CourseBlock],
+        group: Sequence[CourseBlock],
         languages: tuple[str, ...],
         action: str,
     ) -> Finding:
-        refs = _refs(group)
+        refs = evidence_refs(group)
         finding_id = (
             "babel:"
             + content_hash(

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/weather-map-3.0.json",
+  "title": "EII privacy-preserving classroom weather export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "privacy",
+    "cells"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "3.0"
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_group_size",
+        "retention_days",
+        "max_events_per_contributor_per_cell_per_day",
+        "timestamp_precision",
+        "raw_conversations_stored",
+        "direct_identifiers_stored",
+        "count_granularity",
+        "minimum_export_interval_hours",
+        "key_epoch",
+        "contribution_linkage",
+        "mechanism",
+        "protected_unit",
+        "epsilon_per_release",
+        "epsilon_spent",
+        "epsilon_limit",
+        "composition",
+        "release_memoization",
+        "event_count_sensitivity",
+        "contributor_count_sensitivity",
+        "artifact_ledger_binding",
+        "cell_selection_privacy"
+      ],
+      "properties": {
+        "minimum_group_size": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "retention_days": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_events_per_contributor_per_cell_per_day": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timestamp_precision": {
+          "const": "utc-day"
+        },
+        "raw_conversations_stored": {
+          "const": false
+        },
+        "direct_identifiers_stored": {
+          "const": false
+        },
+        "count_granularity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_export_interval_hours": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "key_epoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "contribution_linkage": {
+          "const": "within-cell-day-only-pseudonymous"
+        },
+        "mechanism": {
+          "const": "central-laplace-differential-privacy"
+        },
+        "protected_unit": {
+          "const": "bounded-contributor-cell-utc-day"
+        },
+        "epsilon_per_release": {
+          "type": "number",
+          "minimum": 0
+        },
+        "epsilon_spent": {
+          "type": "number",
+          "minimum": 0
+        },
+        "epsilon_limit": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "composition": {
+          "const": "basic-sequential"
+        },
+        "release_memoization": {
+          "const": "scope-snapshot-policy-bound"
+        },
+        "event_count_sensitivity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "contributor_count_sensitivity": {
+          "const": 1
+        },
+        "artifact_ledger_binding": {
+          "const": "sha256-exact-serialized-bytes"
+        },
+        "cell_selection_privacy": {
+          "const": "exact-k-threshold-not-end-to-end-dp"
+        }
+      }
+    },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "course_key",
+          "activity_key",
+          "language",
+          "concept_id",
+          "signal",
+          "event_count",
+          "contributor_count",
+          "explanation",
+          "recommendation"
+        ],
+        "properties": {
+          "course_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "activity_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1
+          },
+          "concept_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signal": {
+            "enum": [
+              "misconception",
+              "repeated_question",
+              "complete_answer_request",
+              "frustration",
+              "abandonment",
+              "retrieval_failure",
+              "unsupported_question"
+            ]
+          },
+          "event_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "contributor_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recommendation": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

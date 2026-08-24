@@ -329,8 +329,13 @@ class AuditPackageTests(unittest.TestCase):
                 model_run_id(run),
             )
             metadata = dict(bundle.metadata)
-            metadata["semantic_evaluations_schema_version"] = "1.0"
+            metadata["semantic_evaluations_schema_version"] = "2.0"
             metadata["semantic_evaluations"] = [to_dict(record)]
+            mismatched = dict(metadata)
+            mismatched["semantic_evaluations_schema_version"] = "1.0"
+            write_bundle(replace(bundle, metadata=mismatched, id=""), report / "evidence.json")
+            with self.assertRaisesRegex(ValueError, "do not match their declared schema"):
+                load_audit_directory(report)
             write_bundle(replace(bundle, metadata=metadata, id=""), report / "evidence.json")
             with self.assertRaisesRegex(ValueError, "unknown model run"):
                 load_audit_directory(report)

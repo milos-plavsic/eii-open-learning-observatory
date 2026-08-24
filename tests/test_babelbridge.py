@@ -5,7 +5,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from eii.adapters import RepositoryAdapter
-from eii.babelbridge import Alignment, BabelBridge, BabelResult, translation_status
+from eii.alignment_relationships import group_score_components, pair_score_components
+from eii.babelbridge import Alignment, BabelBridge, BabelResult, _similarity, translation_status
 from eii.cli import main
 from eii.domain import (
     ContentBlock,
@@ -126,10 +127,16 @@ class BabelBridgeTests(unittest.TestCase):
         result = BabelResult(
             (
                 Alignment(
-                    "a", ((left.id, left.blocks[0].id), (right.id, right.blocks[0].id)), 1, "test"
+                    "a",
+                    ((left.id, left.blocks[0].id), (right.id, right.blocks[0].id)),
+                    1,
+                    "explicit-concept",
                 ),
                 Alignment(
-                    "b", ((left.id, left.blocks[1].id), (right.id, right.blocks[1].id)), 1, "test"
+                    "b",
+                    ((left.id, left.blocks[1].id), (right.id, right.blocks[1].id)),
+                    1,
+                    "explicit-concept",
                 ),
             ),
             (finding,),
@@ -209,7 +216,7 @@ class BabelBridgeTests(unittest.TestCase):
                 replace(
                     bundle,
                     metadata={
-                        "semantic_evaluations_schema_version": "1.0",
+                        "semantic_evaluations_schema_version": "2.0",
                         "semantic_evaluations": [],
                     },
                 ),
@@ -491,7 +498,9 @@ class BabelBridgeTests(unittest.TestCase):
 
         class Comparator:
             def compare(self, *args, **kwargs):
-                return SemanticJudgment(False, 0.4, "Evaluator is uncertain", {}, run)
+                return SemanticJudgment(
+                    False, 0.4, "Evaluator is uncertain", {"same_meaning": False}, run
+                )
 
         result = BabelBridge(semantic_decision_threshold=0.7).analyze(
             (self.en, self.sr), comparator=Comparator()
@@ -501,6 +510,15 @@ class BabelBridgeTests(unittest.TestCase):
         ]
         self.assertEqual(
             {item.finding_type for item in semantic}, {"translation.semantic_uncertain"}
+        )
+        signals = result.semantic_evaluations[0].decision_signals
+        self.assertIsNone(signals["completion_ratio"])
+        self.assertEqual(signals["failed_member_count"], 0)
+        self.assertTrue(
+            all(
+                value["majority_mean_confidence"] is None
+                for value in signals["property_signals"].values()
+            )
         )
         with self.assertRaisesRegex(ValueError, "between zero and one"):
             BabelBridge(semantic_decision_threshold=1.1)
@@ -555,6 +573,27 @@ class BabelBridgeTests(unittest.TestCase):
             "review-needed",
             {item.state for item in translation_status(uncertain, (self.en, self.sr))},
         )
+
+        class SplitPanelComparator:
+            def compare(self, *args, **kwargs):
+                return SemanticJudgment(
+                    True,
+                    0.95,
+                    "Bare majority",
+                    {},
+                    run,
+                    agreement_ratio=0.6,
+                    majority_mean_confidence=0.95,
+                    minority_mean_confidence=0.99,
+                )
+
+        policy_rejected = BabelBridge(
+            semantic_minimum_agreement=0.8,
+            semantic_maximum_minority_confidence=0.8,
+        ).analyze((self.en, self.sr), comparator=SplitPanelComparator())
+        self.assertTrue(
+            all(item.outcome == "abstained" for item in policy_rejected.semantic_evaluations)
+        )
         lone = BabelResult((), ())
         statuses = translation_status(lone, (self.en, self.sr))
         self.assertTrue(all(item.state == "unaligned" for item in statuses))
@@ -591,7 +630,25 @@ class BabelBridgeTests(unittest.TestCase):
             metadata={},
         )
         score = BabelBridge._pair_score(base.blocks[0], identical, 0, 0, 2, 2)
-        self.assertEqual(score, -12)
+        self.assertGreater(score, 6)
+        explicit_score, components = pair_score_components(
+            base.blocks[0], target.blocks[0], _similarity
+        )
+        self.assertEqual(explicit_score, 1)
+        self.assertEqual(components["translation_id_match"], 1)
+        partial_score, partial_components = pair_score_components(
+            base.blocks[0], identical, _similarity
+        )
+        self.assertGreater(partial_score, 0)
+        self.assertEqual(partial_components["translation_id_missing"], 1)
+        conflicting = replace(target.blocks[0], metadata={"translation_id": "different"}, hash="")
+        conflict_score, conflict_components = pair_score_components(
+            base.blocks[0], conflicting, _similarity
+        )
+        self.assertEqual(conflict_score, 0)
+        self.assertEqual(conflict_components["translation_id_conflict"], 1)
+        self.assertEqual(BabelBridge._pair_score(base.blocks[0], conflicting, 0, 0, 1, 1), -12)
+        self.assertEqual(group_score_components(((base, base.blocks[0]),), _similarity), (1.0, {}))
         plain_left = replace(base.blocks[0], metadata={}, hash="")
         same_identity = replace(plain_left, hash="")
         self.assertGreater(BabelBridge._pair_score(plain_left, same_identity, 0, 0, 2, 2), 6)
@@ -636,7 +693,7 @@ class BabelBridgeTests(unittest.TestCase):
             ),
             "a.png",
         )
-        alignment = Alignment("c", ((self.en.id, self.en.blocks[0].id),), 0.9, "test")
+        alignment = Alignment("c", ((self.en.id, self.en.blocks[0].id),), 0.9, "explicit-concept")
         result = BabelResult(
             (alignment,),
             (Finding("f", "translation.code_drift", "t", "e", Severity.HIGH, 0.9, ()),),

@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Protocol
 
 from .domain import CourseRelease
+from .glossary import Glossary
 from .safety_types import RetrievedEvidence
 
 
@@ -36,11 +37,23 @@ class Retriever(Protocol):
 class BM25Retriever:
     """Small deterministic BM25 implementation with concept/activity boosts."""
 
-    def __init__(self, *, k1: float = 1.2, b: float = 0.75, cache_size: int = 8):
-        if k1 <= 0 or not 0 <= b <= 1 or cache_size < 1:
+    def __init__(
+        self,
+        *,
+        k1: float = 1.2,
+        b: float = 0.75,
+        cache_size: int = 8,
+        glossary: Glossary | None = None,
+        query_language: str | None = None,
+        expansion_weight: float = 0.35,
+    ):
+        if k1 <= 0 or not 0 <= b <= 1 or cache_size < 1 or not 0 < expansion_weight < 1:
             raise ValueError("BM25 requires positive k1/cache size and b between zero and one")
         self.k1, self.b = k1, b
         self.cache_size = cache_size
+        self.glossary = glossary
+        self.query_language = query_language
+        self.expansion_weight = expansion_weight
         self._indexes: OrderedDict[str, BM25Index] = OrderedDict()
         self._lock = RLock()
 
@@ -64,7 +77,56 @@ class BM25Retriever:
     ) -> tuple[RetrievedEvidence, ...]:
         if limit < 1 or limit > 100:
             raise ValueError("retrieval limit must be between 1 and 100")
-        return self.index(course).retrieve(query, limit=limit, activity_id=activity_id)
+        terms = tokenize(query)
+        expanded = (
+            self.glossary.expand(
+                terms,
+                target_language=course.language,
+                source_language=self.query_language,
+            )
+            if self.glossary
+            else ()
+        )
+        weights = dict.fromkeys(terms, 1.0)
+        weights.update({term: self.expansion_weight for term in expanded if term not in weights})
+        return self.index(course).retrieve(
+            query,
+            limit=limit,
+            activity_id=activity_id,
+            term_weights=weights,
+        )
+
+    def query_plan(self, course: CourseRelease, query: str) -> dict[str, object]:
+        """Explain deterministic glossary expansion without exposing course or learner secrets."""
+        original = tokenize(query)
+        expanded: tuple[str, ...] = ()
+        concepts: tuple[str, ...] = ()
+        if self.glossary:
+            expanded, concepts = self.glossary.expand_with_provenance(
+                original,
+                target_language=course.language,
+                source_language=self.query_language,
+            )
+        trace = (
+            self.glossary.expansion_trace(
+                original,
+                target_language=course.language,
+                source_language=self.query_language,
+            )
+            if self.glossary
+            else ()
+        )
+        return {
+            "original_terms": original,
+            "expanded_terms": expanded,
+            "glossary_concept_ids": concepts,
+            "glossary_matches": trace,
+            "target_language": course.language,
+            "source_language": self.query_language,
+            "original_weight": 1.0,
+            "expansion_weight": self.expansion_weight,
+            "algorithm": "bm25-glossary-expansion-v1",
+        }
 
 
 class BM25Index:
@@ -88,19 +150,25 @@ class BM25Index:
         }
 
     def retrieve(
-        self, query: str, *, limit: int = 4, activity_id: str | None = None
+        self,
+        query: str,
+        *,
+        limit: int = 4,
+        activity_id: str | None = None,
+        term_weights: dict[str, float] | None = None,
     ) -> tuple[RetrievedEvidence, ...]:
         if limit < 1 or limit > 100:
             raise ValueError("retrieval limit must be between 1 and 100")
         terms = tokenize(query)
         if not terms:
             return ()
+        weights = term_weights or dict.fromkeys(terms, 1.0)
         scored: list[tuple[float, int]] = []
         for index, (block, document, frequencies) in enumerate(
             zip(self.course.blocks, self.documents, self.frequencies, strict=True)
         ):
             score = 0.0
-            for term in terms:
+            for term, weight in weights.items():
                 frequency = frequencies[term]
                 if not frequency:
                     continue
@@ -113,7 +181,7 @@ class BM25Index:
                 denominator = frequency + self.k1 * (
                     1 - self.b + self.b * len(document) / max(1.0, self.average_length)
                 )
-                score += inverse_frequency * frequency * (self.k1 + 1) / denominator
+                score += weight * inverse_frequency * frequency * (self.k1 + 1) / denominator
             concept_terms = set(tokenize(" ".join(block.concepts)))
             score += 0.75 * len(set(terms) & concept_terms)
             if activity_id and (

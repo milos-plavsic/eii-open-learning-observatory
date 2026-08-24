@@ -26,6 +26,10 @@ def add_semantic_arguments(parser: argparse.ArgumentParser) -> None:
         help="versioned JSON policy for an odd panel of distinct evaluator configurations",
     )
     parser.add_argument("--semantic-threshold", type=float, default=0.7)
+    parser.add_argument("--semantic-minimum-agreement", type=float, default=0.5)
+    parser.add_argument("--semantic-maximum-minority-confidence", type=float)
+    parser.add_argument("--semantic-require-unanimity", action="store_true")
+    parser.add_argument("--semantic-maximum-failed-members", type=int, default=0)
     parser.add_argument("--max-semantic-comparisons", type=int, default=100)
 
 
@@ -39,6 +43,10 @@ def semantic_policy_from_args(
             threshold=args.semantic_threshold,
             config_path=args.semantic_evaluator_config,
             single_client=client,
+            minimum_agreement_ratio=getattr(args, "semantic_minimum_agreement", 0.5),
+            maximum_minority_confidence=getattr(args, "semantic_maximum_minority_confidence", None),
+            require_unanimity=getattr(args, "semantic_require_unanimity", False),
+            maximum_failed_members=getattr(args, "semantic_maximum_failed_members", 0),
         )
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
         command_parser.error(str(error))
@@ -64,6 +72,10 @@ def handle_audit(
     policy = semantic_policy_from_args(args, client, command_parser)
     result = BabelBridge(
         semantic_decision_threshold=policy.threshold,
+        semantic_minimum_agreement=policy.minimum_agreement_ratio,
+        semantic_maximum_minority_confidence=policy.maximum_minority_confidence,
+        semantic_require_unanimity=policy.require_unanimity,
+        semantic_maximum_failed_members=policy.maximum_failed_members,
         max_semantic_comparisons=args.max_semantic_comparisons,
     ).analyze(tuple(releases), glossary=glossary, comparator=policy.comparator)
     alignment_data = to_dict(result.alignments)
@@ -79,7 +91,7 @@ def handle_audit(
         metadata={
             "semantic_policy": policy.evidence,
             "max_semantic_comparisons": args.max_semantic_comparisons,
-            "semantic_evaluations_schema_version": "1.0",
+            "semantic_evaluations_schema_version": "2.0",
             "semantic_evaluations": to_dict(result.semantic_evaluations),
             "semantic_evaluation_plan": to_dict(result.semantic_evaluation_plan),
             "audit_artifacts": artifacts,

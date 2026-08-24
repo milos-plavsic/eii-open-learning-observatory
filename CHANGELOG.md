@@ -2,6 +2,39 @@
 
 All notable changes are recorded here. This project follows semantic versioning.
 
+## [0.2.0] - 2026-08-24
+
+The second public alpha strengthens decision integrity, multilingual retrieval,
+privacy accounting, and crash recovery. It remains an internally verified software
+release, not independent certification or evidence of educational effectiveness.
+
+### Added
+
+- Semantic-panel records expose configured-panel agreement, completion, winning-side
+  confidence, dissent confidence, property agreement, and failed-member counts as
+  separate signals. Provider failures fail closed unless policy explicitly permits
+  a bounded number.
+- Semantic evaluation record 2.0 and Weather Map 3.0 schemas, while preserving the
+  published 1.0 and 2.0 schema identifiers for compatibility.
+- Versioned alignment ranking with auditable components, hard conflicting-ID
+  constraints, partial-ID handling, and consistent selection/evidence scoring.
+- Phrase-aware, provenance-bearing glossary expansion for explicitly covered
+  cross-language BM25 terms without claiming general semantic retrieval.
+- Persistent differential-privacy budgets, memoized Laplace releases, pre-spend
+  authorization, exact-byte export binding, and independently managed ledger keys.
+- Authenticated, fsync-backed publication journals that deterministically recover or
+  roll back every tested filesystem/database crash phase.
+
+### Changed
+
+- Artifact verification authenticates the complete append-only HMAC chain instead of
+  trusting the mutable latest-export index.
+- Weather CLI operation requires a separate durable ledger-key file; privacy-key
+  rotation rejects an implicitly shared ledger key.
+- Consensus, alignment, glossary, privacy, recovery, schema, migration, malformed-input,
+  and adversarial tests expand the suite to 255 tests, 6,109 statements, 1,924 branches,
+  and 24 critical mutation probes, all passing their configured gates.
+
 ## [0.1.0] - 2026-08-24
 
 First release of the EII Open Learning Observatory. Version 0.1.0 establishes
@@ -98,4 +131,5 @@ educational effectiveness.
 - Multilingual accuracy, educational utility, penetration resistance, independent
   reproducibility, and target-school operations await external evidence.
 
+[0.2.0]: https://github.com/milos-plavsic/eii-open-learning-observatory/releases/tag/v0.2.0
 [0.1.0]: https://github.com/milos-plavsic/eii-open-learning-observatory/releases/tag/v0.1.0

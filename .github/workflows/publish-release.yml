@@ -65,13 +65,14 @@ jobs:
               -f ref="refs/tags/v$VERSION" -f sha="$REVISION"
           fi
           cat > release-notes.md <<EOF
-          The first public alpha of the EII Open Learning Observatory: an independent,
+          EII Open Learning Observatory $VERSION is an independent,
           open-source evidence and quality layer for multilingual digital courses and
           educational AI.
 
-          This release includes BabelBridge, Curriculum MRI, Tutor Safety Case,
-          Classroom Weather Map, School-in-a-Box, signed evidence packages,
-          reproducible release tooling, and replaceable platform adapters.
+          This release strengthens BabelBridge alignment and glossary-assisted retrieval,
+          makes semantic-panel agreement and failure policy explicit, adds versioned
+          semantic evidence, and introduces budgeted count privacy plus authenticated,
+          crash-recoverable Classroom Weather publication.
 
           The software has extensive internal verification but has not yet been
           validated against a genuine Petlja export, independently certified, or
@@ -85,5 +86,5 @@ jobs:
           EOF
           gh release create "v$VERSION" approved/* --repo "$GITHUB_REPOSITORY" \
             --verify-tag --latest \
-            --title "EII Open Learning Observatory $VERSION — First Public Alpha" \
+            --title "EII Open Learning Observatory $VERSION — Public Alpha" \
             --notes-file release-notes.md

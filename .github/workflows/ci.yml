@@ -57,12 +57,14 @@ jobs:
         run: |
           python -m json.tool schemas/evidence-bundle.schema.json >/dev/null
           python -m json.tool schemas/semantic-evaluator-policy-1.0.schema.json >/dev/null
+          python -m json.tool schemas/semantic-evaluation-record-2.0.schema.json >/dev/null
           python -m json.tool schemas/semantic-evaluation-record-1.0.schema.json >/dev/null
           python -m json.tool schemas/audit-manifest-2.0.schema.json >/dev/null
           python -m json.tool schemas/audit-authorization-policy-1.0.schema.json >/dev/null
           python -m json.tool schemas/safety-case.schema.json >/dev/null
           python -m json.tool schemas/safety-case-2.0.schema.json >/dev/null
           python -m json.tool schemas/weather-map.schema.json >/dev/null
+          python -m json.tool schemas/weather-map-2.0.schema.json >/dev/null
           python -m json.tool schemas/plct-course-export-v1.schema.json >/dev/null
           python -m json.tool schemas/plct-conformance-report-v1.schema.json >/dev/null
           python -m json.tool schemas/plct-attestation-v1.schema.json >/dev/null

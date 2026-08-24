@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .domain import EvidenceRef, ModelRun, content_hash, freeze_json, to_dict
 
-SEMANTIC_RECORD_VERSION = "1.0"
+SEMANTIC_RECORD_VERSION = "2.0"
 OUTCOMES = frozenset({"equivalent", "drift", "abstained"})
 
 
@@ -29,11 +29,23 @@ class SemanticEvaluationRecord:
     explanation: str
     model_run_id: str
     member_judgments: tuple[Mapping[str, Any], ...] = ()
+    decision_signals: Mapping[str, Any] = field(
+        default_factory=lambda: {
+            "agreement_ratio": None,
+            "majority_mean_confidence": None,
+            "minority_mean_confidence": None,
+            "confidence_kind": "uncalibrated_member_self_report",
+            "property_signals": {},
+            "completion_ratio": None,
+            "failed_member_count": 0,
+        }
+    )
     schema_version: str = SEMANTIC_RECORD_VERSION
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "properties", freeze_json(self.properties))
         object.__setattr__(self, "member_judgments", freeze_json(self.member_judgments))
+        object.__setattr__(self, "decision_signals", freeze_json(self.decision_signals))
         if self.schema_version != SEMANTIC_RECORD_VERSION or self.outcome not in OUTCOMES:
             raise ValueError("unsupported semantic evaluation schema or outcome")
         if not 0 <= self.decision_score <= 1:
@@ -62,16 +74,26 @@ def parse_semantic_records(values: object) -> tuple[SemanticEvaluationRecord, ..
         "explanation",
         "model_run_id",
         "member_judgments",
+        "decision_signals",
         "schema_version",
     }
     for value in values:
-        if not isinstance(value, Mapping) or set(value) != fields:
+        legacy_fields = fields - {"decision_signals"}
+        if not isinstance(value, Mapping) or frozenset(value) not in {
+            frozenset(fields),
+            frozenset(legacy_fields),
+        }:
             raise ValueError("semantic evaluation fields do not match schema")
+        legacy = set(value) == legacy_fields
+        if legacy:
+            legacy_payload = {key: item for key, item in value.items() if key != "id"}
+            if value["schema_version"] != "1.0" or value["id"] != content_hash(legacy_payload):
+                raise ValueError("legacy semantic evaluation id is invalid")
         left = _refs(value["left_evidence"])
         right = _refs(value["right_evidence"])
         records.append(
             SemanticEvaluationRecord(
-                str(value["id"]),
+                "" if legacy else str(value["id"]),
                 str(value["relationship_id"]),
                 left,
                 right,
@@ -81,7 +103,20 @@ def parse_semantic_records(values: object) -> tuple[SemanticEvaluationRecord, ..
                 str(value["explanation"]),
                 str(value["model_run_id"]),
                 _member_records(value["member_judgments"]),
-                str(value["schema_version"]),
+                _decision_signals(value["decision_signals"])
+                if not legacy
+                else _decision_signals(
+                    {
+                        "agreement_ratio": None,
+                        "majority_mean_confidence": float(value["decision_score"]),
+                        "minority_mean_confidence": None,
+                        "confidence_kind": "uncalibrated_member_self_report",
+                        "property_signals": {},
+                        "completion_ratio": None,
+                        "failed_member_count": 0,
+                    }
+                ),
+                SEMANTIC_RECORD_VERSION,
             )
         )
     return tuple(records)
@@ -183,3 +218,56 @@ def _member_records(value: object) -> tuple[Mapping[str, Any], ...]:
             raise ValueError("semantic member judgment fields do not match schema")
         records.append(dict(record))
     return tuple(records)
+
+
+def _decision_signals(value: object) -> dict[str, Any]:
+    required = {
+        "agreement_ratio",
+        "majority_mean_confidence",
+        "minority_mean_confidence",
+        "confidence_kind",
+        "property_signals",
+        "completion_ratio",
+        "failed_member_count",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        raise ValueError("semantic decision signals do not match schema")
+    for name in required - {
+        "confidence_kind",
+        "property_signals",
+        "failed_member_count",
+    }:
+        item = value[name]
+        if item is not None and (
+            not isinstance(item, (int, float))
+            or isinstance(item, bool)
+            or not 0 <= float(item) <= 1
+        ):
+            raise ValueError("semantic decision signal must be null or between zero and one")
+    failed = value["failed_member_count"]
+    if not isinstance(failed, int) or isinstance(failed, bool) or failed < 0:
+        raise ValueError("semantic failed member count must be a non-negative integer")
+    if value["confidence_kind"] != "uncalibrated_member_self_report":
+        raise ValueError("semantic confidence kind is unsupported")
+    properties = value["property_signals"]
+    if not isinstance(properties, Mapping):
+        raise ValueError("semantic property signals must be an object")
+    signal_fields = {
+        "agreement_ratio",
+        "majority_mean_confidence",
+        "minority_mean_confidence",
+    }
+    for name, signals in properties.items():
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(signals, Mapping)
+            or set(signals) != signal_fields
+        ):
+            raise ValueError("semantic property signal fields do not match schema")
+        for item in signals.values():
+            if item is not None and (
+                not isinstance(item, (int, float)) or isinstance(item, bool) or not 0 <= item <= 1
+            ):
+                raise ValueError("semantic property signal must be null or between zero and one")
+    return dict(value)
