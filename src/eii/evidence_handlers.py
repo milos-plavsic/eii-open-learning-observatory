@@ -42,4 +42,4 @@ def evidence_handler(root: Path) -> Callable[[ObservableHandler], None]:
 
 def register_evidence_routes(router: ApplianceRouter, root: Path) -> None:
     router.add("GET", "/api/evidence", evidence_handler(root))
-    router.fallback("GET", content_handler(root))
+    router.add_pattern("GET", "/{content_path:path}", content_handler(root))

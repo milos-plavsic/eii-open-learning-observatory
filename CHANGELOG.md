@@ -21,6 +21,9 @@ publication process before a 0.3.0 release is declared.
 
 - Appliance routing and CLI parsing/dispatch are split into focused modules and
   protected by CI-enforced line and AST-statement budgets.
+- The accuracy corpus now includes four labeled cases, including clean and positive
+  six-language fixtures covering numeric, unit, order, code, link, and missing-content
+  signals; corpus-shape ratchets prevent accidental loss of its validation floor.
 - Runtime Ed25519 compatibility is behaviorally self-tested, and release governance
   fails closed against self-review and administrator bypass.
 - The validation register maps every provisional or external claim to an owned,
@@ -57,7 +60,7 @@ release, not independent certification or evidence of educational effectiveness.
   deployment database identity; privacy-key rotation rejects an implicitly shared
   ledger key.
 - Consensus, alignment, glossary, privacy, recovery, schema, migration, malformed-input,
-  and adversarial tests expand the suite to 271 tests, 6,612 statements, 2,040 branches,
+  and adversarial tests expanded the suite to 255 tests, 6,109 statements, 1,924 branches,
   and 24 critical mutation probes, all passing their configured gates.
 
 ## [0.1.0] - 2026-08-24
