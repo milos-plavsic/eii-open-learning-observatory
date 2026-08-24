@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from eii.crypto import (
     CryptoError,
     _probe_openssl,
+    crypto_self_test,
     openssl_version,
     public_key_fingerprint,
     sign_ed25519,
@@ -88,6 +89,16 @@ class CryptoTests(unittest.TestCase):
             self.assertFalse(verify_ed25519(b"tampered", signature, public))
             self.assertEqual(len(public_key_fingerprint(public)), 64)
             self.assertRegex(openssl_version(), r"^OpenSSL (?:[3-9]|[1-9]\d+)\.")
+            crypto_self_test.cache_clear()
+            crypto_self_test()
+            crypto_self_test.cache_clear()
+            failed = subprocess.CompletedProcess([], 1, stdout=b"", stderr=b"bad")
+            with (
+                patch("eii.crypto.subprocess.run", return_value=failed),
+                self.assertRaisesRegex(CryptoError, "self-test failed"),
+            ):
+                crypto_self_test()
+            crypto_self_test.cache_clear()
 
 
 if __name__ == "__main__":

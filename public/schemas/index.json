@@ -37,12 +37,16 @@
       "sha256": "b5d7013f43fa3ba03cb83e4960612f1e59c877f12023924ce7efd44fb3cd6a13"
     },
     {
+      "name": "release-approval-1.0.json",
+      "sha256": "79b0ca6c4a712096ec37307ccb5426cd6abf8032341c69712f932dbfbb227ebf"
+    },
+    {
       "name": "release-evidence-1.0.json",
       "sha256": "b74953aae90864e2d368106ea7fd25bde6eb1db8560c1ce49cd0c57dd8eb50c3"
     },
     {
       "name": "release-manifest-2.0.json",
-      "sha256": "98737c23882bdbd66a2cf821d1dc8e2bbe18d83eb9135e6959ac0bca4b4e32c4"
+      "sha256": "c0ef4bfc7cae67971816766e6851a9d1be3ab797c59aa4d9dd16811fda1ee83a"
     },
     {
       "name": "safety-case-2.0.json",
@@ -70,7 +74,7 @@
     },
     {
       "name": "weather-map-3.0.json",
-      "sha256": "62a0eeeb19accdff5c2169b78137074de2aa1dea75429754ca14628c8571cf93"
+      "sha256": "07225d8f1de4a31eec6602703931738469dd2452bd430d2b72d40f2a92d77045"
     }
   ]
 }

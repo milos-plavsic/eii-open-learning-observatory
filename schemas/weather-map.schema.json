@@ -32,7 +32,7 @@
         "event_count_sensitivity": {"type": "integer", "minimum": 1},
         "contributor_count_sensitivity": {"const": 1},
         "artifact_ledger_binding": {"const": "sha256-exact-serialized-bytes"},
-        "cell_selection_privacy": {"const": "exact-k-threshold-not-end-to-end-dp"}
+        "cell_selection_privacy": {"enum": ["exact-k-threshold-not-end-to-end-dp", "fixed-public-universe-end-to-end-central-dp"]}
       }
     },
     "cells": {

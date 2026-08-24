@@ -158,7 +158,7 @@ class FederationTests(unittest.TestCase):
             token = root / "token"
             token.write_text("secret")
             token.chmod(0o600)
-            with patch("eii.cli.create_envelope") as create:
+            with patch("eii.cli_operations.create_envelope") as create:
                 self.assertEqual(
                     main(
                         [
@@ -175,13 +175,15 @@ class FederationTests(unittest.TestCase):
                     0,
                 )
                 create.assert_called_once()
-            with patch("eii.cli.verify_envelope") as verify:
+            with patch("eii.cli_operations.verify_envelope") as verify:
                 self.assertEqual(
                     main(["federation-verify", "envelope.json", "--public-key-file", "public.pem"]),
                     0,
                 )
                 verify.assert_called_once()
-            with patch("eii.cli.submit_envelope", return_value=(201, {"ok": True})) as submit:
+            with patch(
+                "eii.cli_operations.submit_envelope", return_value=(201, {"ok": True})
+            ) as submit:
                 self.assertEqual(
                     main(
                         [

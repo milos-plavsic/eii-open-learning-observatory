@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import tarfile
+from collections.abc import Iterator
 from hashlib import sha256
 from pathlib import Path
-from xml.etree.ElementTree import Element
+from typing import Protocol
 
 from defusedxml import ElementTree
 
@@ -21,6 +22,15 @@ _KINDS = {
     "vertical": UnitKind.ACTIVITY,
     "problem": UnitKind.ASSESSMENT,
 }
+
+
+class _XmlElement(Protocol):
+    tag: str
+    attrib: dict[str, str]
+
+    def itertext(self) -> Iterator[str]: ...
+
+    def __iter__(self) -> Iterator[_XmlElement]: ...
 
 
 class OpenEdxOlxAdapter:
@@ -73,7 +83,7 @@ class OpenEdxOlxAdapter:
         blocks: list[ContentBlock] = []
         order = 0
 
-        def visit(node: Element, parent: str | None, path: str) -> None:
+        def visit(node: _XmlElement, parent: str | None, path: str) -> None:
             nonlocal order
             tag = node.tag.rsplit("}", 1)[-1]
             url_name = node.attrib.get("url_name") or f"{tag}-{order}"

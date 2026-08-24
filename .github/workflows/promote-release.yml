@@ -21,7 +21,7 @@ jobs:
     permissions:
       actions: read
       attestations: read
-      contents: write
+      contents: read
     steps:
       - name: Resolve and validate candidate run
         id: candidate
@@ -29,10 +29,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.candidate_run_id }}
         run: |
-          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .conclusion)
-          workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .name)
-          branch=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_branch)
-          revision=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > candidate-run.json
+          conclusion=$(jq -r .conclusion candidate-run.json)
+          workflow=$(jq -r .name candidate-run.json)
+          branch=$(jq -r .head_branch candidate-run.json)
+          revision=$(jq -r .head_sha candidate-run.json)
           test "$conclusion" = success
           test "$workflow" = "Release candidate"
           test "$branch" = main
@@ -57,25 +58,49 @@ jobs:
           EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           python -m pip install candidate/eii_observatory-*.whl
-          python -c 'import hashlib,json,os,pathlib,subprocess; evidence=json.loads(pathlib.Path("candidate/release-evidence.json").read_text()); archive=subprocess.run(["git","archive","--format=tar","HEAD"],cwd="source",check=True,capture_output=True).stdout; digest="sha256:"+hashlib.sha256(archive).hexdigest(); assert evidence["revision"] == os.environ["EXPECTED_REVISION"]; assert evidence["version"] == os.environ["EXPECTED_VERSION"]; assert evidence["source_digest"] == digest'
+          python -c 'import hashlib,json,os,pathlib,subprocess; evidence=json.loads(pathlib.Path("candidate/release-evidence.json").read_text()); archive=subprocess.run(["git","archive","--format=tar","HEAD"],cwd="source",check=True,capture_output=True).stdout; digest="sha256:"+hashlib.sha256(archive).hexdigest(); assert evidence["revision"] == os.environ["EXPECTED_REVISION"]; assert evidence["version"] == os.environ["EXPECTED_VERSION"]; assert evidence["source_digest"] == digest; pathlib.Path("source-binding.json").write_text(json.dumps({"revision":evidence["revision"],"version":evidence["version"],"source_digest":digest},sort_keys=True)+"\n")'
           eii --version | grep -Fx "$EXPECTED_VERSION"
       - name: Verify candidate build provenance
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_REVISION: ${{ steps.candidate.outputs.revision }}
         run: |
+          mkdir -p /tmp/provenance-json /tmp/sbom-json
           for artifact in candidate/*.whl candidate/*.tar.gz; do
+            name=$(basename "$artifact")
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
               --source-digest "$EXPECTED_REVISION" --source-ref refs/heads/main \
               --deny-self-hosted-runners \
-              --predicate-type https://slsa.dev/provenance/v1
+              --predicate-type https://slsa.dev/provenance/v1 --format json \
+              > "/tmp/provenance-json/$name.json"
             gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-candidate.yml" \
               --source-digest "$EXPECTED_REVISION" --source-ref refs/heads/main \
               --deny-self-hosted-runners \
-              --predicate-type https://spdx.dev/Document/v2.3
+              --predicate-type https://spdx.dev/Document/v2.3 --format json \
+              > "/tmp/sbom-json/$name.json"
           done
+          jq -s 'add' /tmp/provenance-json/*.json > provenance-verification.json
+          jq -s 'add' /tmp/sbom-json/*.json > sbom-verification.json
+      - name: Record machine-verified promotion approval
+        env:
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          EXPECTED_REVISION: ${{ steps.candidate.outputs.revision }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          PYTHONPATH=source/src python source/tools/release_preflight.py \
+            --version "$EXPECTED_VERSION" --repository source --revision "$EXPECTED_REVISION" \
+            --approval-output candidate/APPROVAL.json \
+            --candidate-run-id "$CANDIDATE_RUN_ID" --approval-run-id "$GITHUB_RUN_ID" \
+            --github-repository "$GITHUB_REPOSITORY" --actor "$GITHUB_ACTOR" \
+            --environment production-release --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --receipt candidate-workflow-success=candidate-run.json \
+            --receipt main-branch-revision-bound=source-binding.json \
+            --receipt artifact-version-binding=source-binding.json \
+            --receipt artifact-build-provenance=provenance-verification.json \
+            --receipt artifact-sbom-attestation=sbom-verification.json \
+            candidate/*.whl candidate/*.tar.gz
       - name: Sign and verify candidate manifest
         env:
           RELEASE_PRIVATE_KEY: ${{ secrets.EII_RELEASE_PRIVATE_KEY_PEM }}

@@ -108,6 +108,50 @@ class SchemaConformanceTests(unittest.TestCase):
             invalid_release["artifacts"][0]["sha256"] = "bad"
             self.assertTrue(list(release_validator.iter_errors(invalid_release)))
 
+            approval = {
+                "schema_version": "1.0",
+                "project": "eii-observatory",
+                "version": __version__,
+                "revision": "a" * 40,
+                "candidate_run_id": "123",
+                "approval_run_id": "456",
+                "repository": "milos-plavsic/eii-open-learning-observatory",
+                "actor": "release-reviewer",
+                "environment": "production-release",
+                "run_url": "https://github.com/example/actions/runs/456",
+                "checks": [
+                    "candidate-workflow-success",
+                    "main-branch-revision-bound",
+                    "artifact-version-binding",
+                    "artifact-build-provenance",
+                    "artifact-sbom-attestation",
+                ],
+                "artifacts": {
+                    item["name"]: {"sha256": item["sha256"], "size": item["size"]}
+                    for item in release_evidence["artifacts"]
+                },
+                "receipts": {
+                    name: {
+                        "path": f"approval-receipts/{name}.json",
+                        "sha256": "sha256:" + "c" * 64,
+                        "size": 1,
+                        "media_type": "application/json",
+                    }
+                    for name in (
+                        "candidate-workflow-success",
+                        "main-branch-revision-bound",
+                        "artifact-version-binding",
+                        "artifact-build-provenance",
+                        "artifact-sbom-attestation",
+                    )
+                },
+            }
+            approval_validator = validator("release-approval-1.0.schema.json")
+            approval_validator.validate(approval)
+            invalid_approval = copy.deepcopy(approval)
+            invalid_approval["checks"].pop()
+            self.assertTrue(list(approval_validator.iter_errors(invalid_approval)))
+
             manifest = {
                 "schema_version": "2.0",
                 "project": "eii-observatory",
@@ -115,7 +159,12 @@ class SchemaConformanceTests(unittest.TestCase):
                 "revision": "a" * 40,
                 "files": {
                     name: {"sha256": "0" * 64, "size": 1}
-                    for name in ("SHA256SUMS", "release-evidence.json", "sbom.spdx.json")
+                    for name in (
+                        "SHA256SUMS",
+                        "release-evidence.json",
+                        "sbom.spdx.json",
+                        "APPROVAL.json",
+                    )
                 },
             }
             manifest_validator = validator("release-manifest-2.0.schema.json")

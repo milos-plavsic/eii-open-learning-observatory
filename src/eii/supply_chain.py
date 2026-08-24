@@ -15,8 +15,9 @@ from datetime import UTC, datetime
 from importlib.metadata import metadata
 from pathlib import Path
 
-from .crypto import public_key_fingerprint, sign_ed25519, verify_ed25519
-from .domain import canonical_json
+from .release_signing import sign_release_evidence as sign_release_evidence
+from .release_signing import verify_approval_evidence as verify_approval_evidence
+from .release_signing import verify_signed_release as verify_signed_release
 
 RUNTIME_LICENSES = {"defusedxml": "PSF-2.0", "rfc8785": "Apache-2.0"}
 
@@ -258,86 +259,3 @@ def verify_release_evidence(evidence_path: Path, artifact_directory: Path) -> No
             raise ValueError(f"release artifact missing or invalid: {path.name}")
         if path.stat().st_size != item["size"] or sha256_file(path) != item["sha256"]:
             raise ValueError(f"release artifact checksum mismatch: {path.name}")
-
-
-def sign_release_evidence(evidence_directory: Path, private_key: Path, public_key: Path) -> Path:
-    required = ("SHA256SUMS", "release-evidence.json", "sbom.spdx.json")
-    missing = [name for name in required if not (evidence_directory / name).is_file()]
-    if missing:
-        raise ValueError(f"release evidence file is missing: {', '.join(missing)}")
-    evidence = json.loads((evidence_directory / "release-evidence.json").read_text("utf-8"))
-    manifest = {
-        "schema_version": "2.0",
-        "project": evidence.get("project"),
-        "version": evidence.get("version"),
-        "revision": evidence.get("revision"),
-        "files": {
-            name: {
-                "sha256": sha256_file(evidence_directory / name),
-                "size": (evidence_directory / name).stat().st_size,
-            }
-            for name in required
-        },
-    }
-    manifest_path = evidence_directory / "RELEASE-MANIFEST.json"
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", "utf-8"
-    )
-    signed_payload = canonical_json(manifest).encode("utf-8")
-    signature = sign_ed25519(signed_payload, private_key)
-    if not verify_ed25519(signed_payload, signature, public_key):
-        raise ValueError("release private and public keys do not match")
-    document = {
-        "algorithm": "Ed25519",
-        "key_fingerprint": public_key_fingerprint(public_key),
-        "signature": signature,
-    }
-    destination = evidence_directory / "RELEASE-MANIFEST.ed25519.json"
-    destination.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", "utf-8")
-    return destination
-
-
-def verify_signed_release(
-    evidence_directory: Path, artifact_directory: Path, public_key: Path
-) -> None:
-    manifest_path = evidence_directory / "RELEASE-MANIFEST.json"
-    manifest = json.loads(manifest_path.read_text("utf-8"))
-    document = json.loads((evidence_directory / "RELEASE-MANIFEST.ed25519.json").read_text("utf-8"))
-    if (
-        set(document) != {"algorithm", "key_fingerprint", "signature"}
-        or document["algorithm"] != "Ed25519"
-    ):
-        raise ValueError("release signature document is invalid")
-    if document["key_fingerprint"] != public_key_fingerprint(public_key):
-        raise ValueError("release signature key fingerprint does not match")
-    if not verify_ed25519(
-        canonical_json(manifest).encode("utf-8"), str(document["signature"]), public_key
-    ):
-        raise ValueError("release manifest signature verification failed")
-    if (
-        set(manifest) != {"schema_version", "project", "version", "revision", "files"}
-        or manifest["schema_version"] != "2.0"
-        or not isinstance(manifest["files"], dict)
-    ):
-        raise ValueError("release manifest is invalid")
-    required = {"SHA256SUMS", "release-evidence.json", "sbom.spdx.json"}
-    if set(manifest["files"]) != required:
-        raise ValueError("release manifest file set is invalid")
-    for name in sorted(required):
-        path = evidence_directory / name
-        record = manifest["files"][name]
-        if (
-            not path.is_file()
-            or set(record) != {"sha256", "size"}
-            or record["sha256"] != sha256_file(path)
-            or record["size"] != path.stat().st_size
-        ):
-            raise ValueError(f"signed release evidence mismatch: {name}")
-    evidence = json.loads((evidence_directory / "release-evidence.json").read_text("utf-8"))
-    if any(manifest[key] != evidence.get(key) for key in ("project", "version", "revision")):
-        raise ValueError("release manifest identity does not match release evidence")
-    if json.loads((evidence_directory / "sbom.spdx.json").read_text("utf-8")) != evidence.get(
-        "spdx"
-    ):
-        raise ValueError("signed SBOM does not match release evidence")
-    verify_release_evidence(evidence_directory / "release-evidence.json", artifact_directory)

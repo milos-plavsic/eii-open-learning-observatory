@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eii.edu.eu/schemas/release-approval-1.0.json",
+  "title": "EII machine-verified release promotion approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project", "version", "revision", "candidate_run_id",
+    "approval_run_id", "repository", "actor", "environment", "run_url",
+    "checks", "artifacts", "receipts"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "project": {"type": "string", "minLength": 1, "maxLength": 512},
+    "version": {"type": "string", "minLength": 1, "maxLength": 512},
+    "revision": {"type": "string", "minLength": 1, "maxLength": 512},
+    "candidate_run_id": {"type": "string", "minLength": 1, "maxLength": 512},
+    "approval_run_id": {"type": "string", "minLength": 1, "maxLength": 512},
+    "repository": {"type": "string", "minLength": 1, "maxLength": 512},
+    "actor": {"type": "string", "minLength": 1, "maxLength": 512},
+    "environment": {"type": "string", "minLength": 1, "maxLength": 512},
+    "run_url": {"type": "string", "format": "uri", "maxLength": 512},
+    "checks": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "enum": [
+          "candidate-workflow-success", "main-branch-revision-bound",
+          "artifact-version-binding", "artifact-build-provenance",
+          "artifact-sbom-attestation"
+        ]
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/file"}
+    },
+    "receipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate-workflow-success", "main-branch-revision-bound",
+        "artifact-version-binding", "artifact-build-provenance",
+        "artifact-sbom-attestation"
+      ],
+      "properties": {
+        "candidate-workflow-success": {"$ref": "#/$defs/receipt"},
+        "main-branch-revision-bound": {"$ref": "#/$defs/receipt"},
+        "artifact-version-binding": {"$ref": "#/$defs/receipt"},
+        "artifact-build-provenance": {"$ref": "#/$defs/receipt"},
+        "artifact-sbom-attestation": {"$ref": "#/$defs/receipt"}
+      }
+    }
+  },
+  "$defs": {
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size", "media_type"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^approval-receipts/[a-z0-9-]+\\.json$"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "size": {"type": "integer", "minimum": 1},
+        "media_type": {"const": "application/json"}
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "size"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

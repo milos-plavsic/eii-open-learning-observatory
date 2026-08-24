@@ -6,7 +6,8 @@ Until a stable release, only the newest `0.x` minor line receives security fixes
 
 | Version | Status |
 |---|---|
-| 0.1.x | Supported |
+| 0.2.x | Supported |
+| 0.1.x | Unsupported |
 | Unreleased `main` | Development only |
 
 ## Reporting
@@ -39,3 +40,10 @@ packages are rejected and have no supported migration or installation path.
 
 See `docs/threat-model.md`, `docs/key-management.md`, and
 `docs/incident-response.md` for controls and response procedures.
+
+## Independent assessment status
+
+No independent security assessment has yet been completed. The procurement-ready
+scope and acceptance criteria are in `docs/security-assessment-brief.md`; status
+is tracked as VAL-006 in `docs/validation-commitments.md`. No production or
+learner-data claim may treat internal tests as a substitute for that review.

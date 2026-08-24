@@ -32,6 +32,12 @@ declaration-only exclusion count is documented in `docs/testing-policy.md`.
 Pull requests should include
 tests for new behavior and update relevant schemas and documentation.
 
+Any change introducing or modifying shared mutable state under concurrency—such
+as a SQLite ledger, in-memory counter, cache, queue, or rate limiter—must include
+a race-stress test in the same pull request. The test must exercise concurrent
+operations against the shared instance or shared persistence boundary and assert
+the safety invariant, not merely that operations complete without exceptions.
+
 ## Pull requests
 
 Keep changes focused and explain the educational use case, evidence boundary,

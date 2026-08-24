@@ -5,7 +5,7 @@ import unittest
 import zipfile
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -26,6 +26,7 @@ from eii.appliance import (
     verify_package,
     write_onboarding_page,
 )
+from eii.appliance_router import ApplianceRouter
 from eii.domain import ModelRun, content_hash
 from eii.safety import AssistantResponse
 
@@ -41,6 +42,26 @@ class Tutor:
 
 
 class ApplianceDefensiveTests(unittest.TestCase):
+    def test_router_rejects_duplicates_dispatches_fallback_and_404(self):
+        calls = []
+        router = ApplianceRouter()
+
+        def handler(request):
+            calls.append(request)
+
+        router.add("get", "/exact", handler)
+        with self.assertRaisesRegex(ValueError, "duplicate appliance route"):
+            router.add("GET", "/exact", handler)
+        router.fallback("get", handler)
+        with self.assertRaisesRegex(ValueError, "duplicate appliance fallback"):
+            router.fallback("GET", handler)
+        request = Mock()
+        router.dispatch(request, "get", "/exact")
+        router.dispatch(request, "get", "/fallback")
+        router.dispatch(request, "post", "/absent")
+        self.assertEqual(calls, [request, request])
+        request.send_error.assert_called_once_with(404)
+
     def test_configuration_capability_and_package_preconditions(self):
         for courses, languages, behavior in (
             ((), ("en",), "direct"),
@@ -134,9 +155,21 @@ class ApplianceDefensiveTests(unittest.TestCase):
             site = root / "site"
             site.mkdir()
             (site / "index.html").write_text("ok")
+            evidence_file = root / "evidence.json"
+            evidence_file.write_text('{"schema_version":"2.0","id":"demo"}')
+            weather_file = root / "weather-map.json"
+            weather_file.write_text(
+                '{"schema_version":"3.0","privacy":{"raw_conversations_stored":false,'
+                '"direct_identifiers_stored":false},"cells":[]}'
+            )
             package = root / "p.eii"
             box = root / "box"
-            create_package((site,), package, version="1", private_key=TEST_PRIVATE_KEY)
+            create_package(
+                (site, evidence_file, weather_file),
+                package,
+                version="1",
+                private_key=TEST_PRIVATE_KEY,
+            )
             install_package(package, box, public_key=TEST_PUBLIC_KEY)
             course = PlctExportAdapter().load(FIXTURES / "plct.json")
             server = ThreadingHTTPServer(
@@ -155,6 +188,8 @@ class ApplianceDefensiveTests(unittest.TestCase):
                 base = f"http://127.0.0.1:{server.server_port}"
                 self.assertEqual(json.loads(urlopen(base + "/healthz").read())["status"], "ok")
                 self.assertEqual(urlopen(base + "/site/").read(), b"ok")
+                self.assertEqual(json.loads(urlopen(base + "/api/evidence").read())["id"], "demo")
+                self.assertEqual(json.loads(urlopen(base + "/api/weather").read())["cells"], [])
                 for path, code in (("/missing", 404), ("/%2e%2e/x", 400)):
                     with self.assertRaises(HTTPError) as error:
                         urlopen(base + path)
@@ -165,6 +200,11 @@ class ApplianceDefensiveTests(unittest.TestCase):
                     (b"{}", {"Content-Type": "text/plain"}, 400),
                     (b'{"question":""}', {"Content-Type": "application/json"}, 400),
                     (b'{"question":"q","extra":1}', {"Content-Type": "application/json"}, 400),
+                    (
+                        b'{"question":"q","language":1}',
+                        {"Content-Type": "application/json"},
+                        400,
+                    ),
                     (
                         b'{"question":"q","language":"en"}',
                         {"Content-Type": "application/json"},

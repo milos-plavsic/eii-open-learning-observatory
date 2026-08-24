@@ -1,0 +1,45 @@
+rules:
+  - id: eii-no-shell-true
+    message: Shell execution is forbidden; pass an argv sequence to subprocess.
+    severity: ERROR
+    languages: [python]
+    pattern: subprocess.$F(..., shell=True, ...)
+
+  - id: eii-no-unsafe-xml-parser
+    message: Untrusted educational content must use defusedxml, never stdlib XML parsers.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: import xml.etree.ElementTree
+      - pattern: from xml.etree import ElementTree
+      - pattern: import xml.dom.minidom
+      - pattern: from xml.dom import minidom
+
+  - id: eii-dp-must-not-use-pseudorandom
+    message: Privacy mechanisms must use a cryptographically secure or injected deterministic RNG.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include: ["**/src/eii/weather_dp.py", "**/src/eii/weather_publication.py"]
+    pattern-either:
+      - pattern: random.$F(...)
+      - pattern: from random import $F
+
+  - id: eii-no-sqlite-thread-bypass-outside-persistence
+    message: Thread-sharing SQLite connections must be created through the audited persistence layer.
+    severity: ERROR
+    languages: [python]
+    paths:
+      exclude: ["**/src/eii/persistence.py"]
+    pattern: sqlite3.connect(..., check_same_thread=False, ...)
+
+  - id: eii-no-raw-request-logging
+    message: Never log a raw request body; emit bounded metadata through the audit sink.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: logging.$F(..., $REQUEST, ...)
+      - pattern: $LOGGER.$F(..., $REQUEST.body, ...)
+    metavariable-regex:
+      metavariable: $REQUEST
+      regex: (?i)(request|body|conversation|prompt)

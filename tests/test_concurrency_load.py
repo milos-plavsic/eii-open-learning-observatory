@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -14,6 +15,7 @@ from eii.appliance import create_package, install_package, make_handler
 from eii.service import ServiceMetrics
 from eii.study import ReviewStudy
 from eii.weather import MinimizedEvent, Signal, WeatherStore
+from eii.weather_dp import release_counts
 
 
 class ConcurrencyLoadTests(unittest.TestCase):
@@ -48,6 +50,70 @@ class ConcurrencyLoadTests(unittest.TestCase):
             ) as store:
                 cell = store.aggregate()[0]
             self.assertEqual((cell.event_count, cell.contributor_count), (24, 24))
+
+    def test_one_weather_store_is_safe_for_concurrent_callers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with WeatherStore(
+                Path(directory) / "weather.db",
+                secret=b"0123456789abcdef0123456789abcdef",
+                minimum_group_size=2,
+            ) as store:
+
+                def ingest(index: int) -> None:
+                    store.ingest(
+                        MinimizedEvent(
+                            datetime.now(UTC).isoformat(),
+                            "course",
+                            "activity",
+                            "en",
+                            "concept",
+                            Signal.FRUSTRATION,
+                            f"shared-{index}",
+                        )
+                    )
+
+                with ThreadPoolExecutor(max_workers=12) as pool:
+                    list(pool.map(ingest, range(48)))
+                    snapshots = list(pool.map(lambda _: store.aggregate(), range(24)))
+                self.assertTrue(all(snapshot[0].event_count == 48 for snapshot in snapshots))
+
+    def test_independent_connections_cannot_overspend_epsilon_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "budget.sqlite"
+            with WeatherStore(database, secret=b"b" * 32, dp_epsilon=0.1, dp_total_epsilon=0.5):
+                pass
+
+            def spend(index: int) -> bool:
+                connection = sqlite3.connect(database, timeout=10)
+                connection.execute("PRAGMA busy_timeout=10000")
+                try:
+                    release_counts(
+                        connection,
+                        scope="course",
+                        snapshot_hash=f"snapshot-{index}",
+                        cells=[{"event_count": 1, "contributor_count": 1}],
+                        epsilon=0.1,
+                        epsilon_limit=0.5,
+                        event_sensitivity=1,
+                    )
+                    return True
+                except ValueError as error:
+                    self.assertIn("budget exhausted", str(error))
+                    return False
+                finally:
+                    connection.close()
+
+            with ThreadPoolExecutor(max_workers=20) as pool:
+                results = list(pool.map(spend, range(20)))
+            connection = sqlite3.connect(database)
+            try:
+                spent = connection.execute(
+                    "SELECT epsilon_spent FROM dp_budget WHERE id=1"
+                ).fetchone()[0]
+            finally:
+                connection.close()
+            self.assertEqual(sum(results), 5)
+            self.assertAlmostEqual(spent, 0.5)
 
     def test_review_study_concurrent_independent_reviewers(self):
         with tempfile.TemporaryDirectory() as directory:

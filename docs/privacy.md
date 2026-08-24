@@ -5,9 +5,11 @@ event schema permits only timestamp, course/activity keys, language, concept,
 signal and a short-lived pseudonymous contribution token. Imports containing any
 additional field are rejected, including seemingly convenient raw questions.
 
-Before persistence, contribution tokens are keyed-hashed with a local secret,
-explicit key epoch, UTC day and complete aggregate-cell identity. A stored value
-therefore cannot link a contributor across days or cells. Tokens must be rotated
+Before persistence, contribution tokens are keyed-hashed with a local secret and
+explicit key epoch. Compatibility mode binds the hash to UTC day and cell, so it
+cannot link across days or cells. Fixed-universe mode binds it to course and UTC
+day so the system can enforce a maximum number of contributed cells; this allows
+within-course/day linkage but not cross-day linkage. Tokens must be rotated
 by the collecting classroom service. This is pseudonymization, not anonymity.
 Timestamps are reduced to their UTC calendar day before persistence. One
 contributor can add at most three events per day to the same
@@ -39,15 +41,21 @@ restores the prior bytes. Verification authenticates the complete append-only ch
 not the mutable latest-export index. A failed artifact publication conservatively
 retains any privacy budget already spent; retrying the same memoized snapshot reuses
 the same noisy release and spends no additional epsilon.
-This supplies differential privacy for each released fixed count vector, under the
+In compatibility mode this supplies differential privacy for each released fixed count vector, under the
 stated protected unit and sequential-composition budget. It does not make the full
 sparse report end-to-end differentially private: cell selection still depends on an
 exact threshold over a data-dependent set of cells. A fixed public cell universe or
 reviewed private-histogram mechanism is required before making that stronger claim.
+Fixed-universe mode instead publishes a curriculum-declared, data-independent cell
+set including zero cells and bounds contributor sensitivity across those cells;
+it therefore implements an internally verified end-to-end central-DP mechanism
+for that declared adjacency. Independent privacy review remains required.
 Deployment privacy review remains required.
 
-The ledger detects local history alteration but cannot prevent an operator from cloning
-or rolling back an entire database. High-assurance deployments need protected backups,
+The ledger detects local history alteration. Database-instance lineage rejects a
+clone opened under a different configured identity and records explicit forks,
+but cannot detect two copies both continuing under the original identity or a
+whole-store rollback. High-assurance deployments need protected backups,
 monotonic external audit anchoring, and a deployment privacy assessment. Deployments
 should keep both the SQLite database and secret on the school
 server. Moving the secret off-device or correlating rotating tokens with school

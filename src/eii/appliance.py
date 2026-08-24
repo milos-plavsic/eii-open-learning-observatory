@@ -1,35 +1,38 @@
 from __future__ import annotations
 
-import hmac
 import json
-import mimetypes
 import os
 import platform
 import shutil
 import signal
-import tempfile
 import threading
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, TextIO, cast
-from urllib.parse import unquote, urlparse
+from typing import Any, TextIO
+from urllib.parse import urlparse
 
 from .adapters import PlctExportAdapter, RepositoryAdapter
+from .appliance_health_handlers import health_handler, metrics_handler, readiness_handler
 from .appliance_package import create_package as create_package
 from .appliance_package import verify_package as verify_package
+from .appliance_router import ApplianceRouter
 from .appliance_state import active_release, read_config
-from .appliance_state import atomic_json as _atomic_json
 from .appliance_state import configure as configure
 from .appliance_state import recover_active_release as recover_active_release
 from .appliance_state import rollback as rollback
 from .appliance_state import write_onboarding_page as write_onboarding_page
+from .appliance_trust import apply_trust_rotation as apply_trust_rotation
+from .appliance_trust import create_trust_rotation as create_trust_rotation
+from .appliance_trust import initialize_trust as initialize_trust
+from .appliance_trust import install_trusted_package as install_trusted_package
 from .appliance_types import ApplianceConfig, CapabilityReport, PackageManifest
+from .crypto import crypto_self_test, sign_ed25519, verify_ed25519
 from .crypto import public_key_fingerprint as _public_key_fingerprint
-from .crypto import sign_ed25519, verify_ed25519
-from .domain import CourseRelease, to_dict
+from .domain import CourseRelease
+from .evidence_handlers import register_evidence_routes
 from .models import OpenAICompatibleClient
-from .safety_types import AssistantResponse
+from .safety_handlers import register_safety_routes
 from .safety_verification import verify_safety_case_document
 from .service import (
     AuditSink,
@@ -38,8 +41,9 @@ from .service import (
     ServiceMetrics,
     json_audit_sink,
 )
-from .service_limits import BoundedRateLimiter, nonce_html
+from .service_limits import BoundedRateLimiter
 from .tutor import GroundedTutor
+from .weather_handlers import register_weather_routes
 
 
 def capability_check(
@@ -174,152 +178,16 @@ def install_package(
     return manifest
 
 
+def public_key_fingerprint(public_key: Path) -> str:
+    return _public_key_fingerprint(public_key)
+
+
 def _ed25519_sign(data: bytes, private_key: Path | None) -> str:
     return sign_ed25519(data, private_key)
 
 
 def _ed25519_verify(data: bytes, signature: str, public_key: Path | None) -> bool:
     return verify_ed25519(data, signature, public_key)
-
-
-def public_key_fingerprint(public_key: Path) -> str:
-    return _public_key_fingerprint(public_key)
-
-
-def initialize_trust(appliance_root: Path, public_key: Path) -> str:
-    fingerprint = public_key_fingerprint(public_key)
-    trust = appliance_root / "trust"
-    keys = trust / "keys"
-    keys.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(public_key, keys / f"{fingerprint}.pem")
-    state = {
-        "schema_version": "1.0",
-        "trusted_keys": [fingerprint],
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-    _atomic_json(trust / "state.json", state)
-    with (trust / "history.jsonl").open("a", encoding="utf-8") as history:
-        history.write(
-            json.dumps(
-                {"action": "initialize", "fingerprint": fingerprint, "at": state["updated_at"]}
-            )
-            + "\n"
-        )
-    return fingerprint
-
-
-def create_trust_rotation(
-    current_private_key: Path,
-    current_public_key: Path,
-    new_public_key: Path,
-    destination: Path,
-    *,
-    revoke_old: bool = False,
-) -> None:
-    statement = {
-        "schema_version": "1.0",
-        "old_fingerprint": public_key_fingerprint(current_public_key),
-        "new_fingerprint": public_key_fingerprint(new_public_key),
-        "new_public_key": new_public_key.read_text("utf-8"),
-        "revoke_old": revoke_old,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    body = json.dumps(statement, sort_keys=True, separators=(",", ":")).encode()
-    payload = {"statement": statement, "signature": _ed25519_sign(body, current_private_key)}
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", "utf-8")
-
-
-def apply_trust_rotation(appliance_root: Path, authorization: Path) -> str:
-    trust = appliance_root / "trust"
-    state_path = trust / "state.json"
-    state = json.loads(state_path.read_text("utf-8"))
-    payload = json.loads(authorization.read_text("utf-8"))
-    statement = payload["statement"]
-    old = statement["old_fingerprint"]
-    if old not in state["trusted_keys"]:
-        raise ValueError("rotation is not authorized by a currently trusted key")
-    body = json.dumps(statement, sort_keys=True, separators=(",", ":")).encode()
-    if not _ed25519_verify(body, payload["signature"], trust / "keys" / f"{old}.pem"):
-        raise ValueError("trust rotation signature verification failed")
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8") as candidate:
-        candidate.write(statement["new_public_key"])
-        candidate.flush()
-        actual = public_key_fingerprint(Path(candidate.name))
-    if actual != statement["new_fingerprint"]:
-        raise ValueError("rotated public key fingerprint mismatch")
-    new = statement["new_fingerprint"]
-    (trust / "keys" / f"{new}.pem").write_text(statement["new_public_key"], "utf-8")
-    trusted = (
-        [new] if statement.get("revoke_old") else list(dict.fromkeys([*state["trusted_keys"], new]))
-    )
-    state = {
-        "schema_version": "1.0",
-        "trusted_keys": trusted,
-        "updated_at": datetime.now(UTC).isoformat(),
-    }
-    _atomic_json(state_path, state)
-    with (trust / "history.jsonl").open("a", encoding="utf-8") as history:
-        history.write(
-            json.dumps(
-                {
-                    "action": "rotate",
-                    "old_fingerprint": old,
-                    "new_fingerprint": new,
-                    "revoke_old": bool(statement.get("revoke_old")),
-                    "at": state["updated_at"],
-                }
-            )
-            + "\n"
-        )
-    return cast(str, new)
-
-
-def install_trusted_package(
-    package: Path,
-    appliance_root: Path,
-    *,
-    safety_public_key: Path | None = None,
-    trusted_reviewer_fingerprints: frozenset[str] = frozenset(),
-) -> PackageManifest:
-    trust = appliance_root / "trust"
-    state = json.loads((trust / "state.json").read_text("utf-8"))
-    for fingerprint in state["trusted_keys"]:
-        public_key = trust / "keys" / f"{fingerprint}.pem"
-        try:
-            return install_package(
-                package,
-                appliance_root,
-                public_key=public_key,
-                safety_public_key=safety_public_key,
-                trusted_reviewer_fingerprints=trusted_reviewer_fingerprints,
-            )
-        except ValueError as error:
-            if "signature verification failed" not in str(error):
-                raise
-    raise ValueError("package is not signed by a currently trusted publisher key")
-
-
-def _capacity_answer(
-    capacity: threading.BoundedSemaphore,
-    tutor: GroundedTutor,
-    course: CourseRelease,
-    data: dict[str, object],
-    behavior: str,
-    language: str,
-) -> AssistantResponse | None:
-    if not capacity.acquire(blocking=False):
-        return None
-    try:
-        question = cast(str, data["question"])
-        return tutor.answer(
-            f"Assistant behavior: {behavior}. {question}",
-            course=course,
-            activity_id=cast(str | None, data.get("activity_id")),
-            language=language,
-        )
-    finally:
-        capacity.release()
 
 
 def make_handler(
@@ -345,6 +213,21 @@ def make_handler(
     rate_limiter = BoundedRateLimiter(max_queries_per_minute, max_rate_limit_clients)
     query_capacity = threading.BoundedSemaphore(max_concurrent_queries)
     service_metrics = metrics or ServiceMetrics()
+    router = ApplianceRouter()
+    router.add("GET", "/metrics", metrics_handler)
+    router.add("GET", "/readyz", readiness_handler(appliance_root, draining))
+    router.add("GET", "/healthz", health_handler(appliance_root))
+    register_evidence_routes(router, appliance_root)
+    register_weather_routes(router, appliance_root)
+    register_safety_routes(
+        router,
+        tutor=tutor,
+        course=course,
+        config=config,
+        query_token=query_token,
+        rate_limiter=rate_limiter,
+        capacity=query_capacity,
+    )
 
     class Handler(ObservableHandler):
         metrics_registry = service_metrics
@@ -371,121 +254,10 @@ def make_handler(
             return rate_limiter.limited(self.client_address[0])
 
         def do_GET(self) -> None:
-            parsed = urlparse(self.path)
-            if parsed.path == "/metrics":
-                self.send_metrics()
-                return
-            if parsed.path == "/readyz":
-                payload: dict[str, object]
-                if draining and draining.is_set():
-                    payload, status = {"status": "draining"}, 503
-                else:
-                    try:
-                        release = active_release(appliance_root)
-                        payload, status = {"status": "ready", "release": release.name}, 200
-                    except Exception as error:
-                        payload, status = {"status": "not-ready", "detail": str(error)}, 503
-                body = json.dumps(payload).encode()
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            if parsed.path == "/healthz":
-                try:
-                    release = active_release(appliance_root)
-                    payload, status = (
-                        {"status": "ok", "release": release.name, "offline": True},
-                        200,
-                    )
-                except Exception as error:
-                    payload, status = {"status": "error", "detail": str(error)}, 503
-                body = json.dumps(payload).encode()
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            relative = unquote(parsed.path).lstrip("/") or "index.html"
-            pure = PurePosixPath(relative)
-            if pure.is_absolute() or ".." in pure.parts:
-                self.send_error(400)
-                return
-            root = active_release(appliance_root) / "content"
-            target = root.joinpath(*pure.parts)
-            if target.is_dir():
-                target = target / "index.html"
-            if not target.is_file() or not target.resolve().is_relative_to(root.resolve()):
-                self.send_error(404)
-                return
-            body = target.read_bytes()
-            content_type = mimetypes.guess_type(target)[0] or "application/octet-stream"
-            if content_type == "text/html":
-                body, self._content_nonce = nonce_html(body)
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            router.dispatch(self, "GET", urlparse(self.path).path)
 
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/api/query" or tutor is None or course is None:
-                self.send_error(404)
-                return
-            if self._rate_limited():
-                self.send_error(429, "query rate limit exceeded")
-                return
-            if query_token is not None:
-                authorization = self.headers.get("Authorization", "")
-                supplied = authorization[7:] if authorization.startswith("Bearer ") else ""
-                if not supplied or not hmac.compare_digest(supplied, query_token):
-                    self.send_error(401, "valid classroom bearer token required")
-                    return
-            try:
-                content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-                if content_type != "application/json":
-                    raise ValueError("Content-Type must be application/json")
-                origin = self.headers.get("Origin")
-                if origin and urlparse(origin).netloc != self.headers.get("Host"):
-                    raise ValueError("cross-origin requests are not allowed")
-                length = int(self.headers.get("Content-Length", "0"))
-                if length < 1 or length > 32_768:
-                    raise ValueError("request size must be between 1 and 32768 bytes")
-                data = json.loads(self.rfile.read(length))
-                if set(data) - {"question", "language", "activity_id"}:
-                    raise ValueError("query contains unsupported fields")
-                question = data["question"]
-                if not isinstance(question, str) or not question.strip() or len(question) > 4000:
-                    raise ValueError(
-                        "question must be a non-empty string of at most 4000 characters"
-                    )
-                language = data.get("language", course.language)
-                if config and language not in config.allowed_languages:
-                    raise ValueError("requested language is not enabled by the teacher")
-                behavior = config.assistant_behavior if config else "hint-first"
-                response = _capacity_answer(query_capacity, tutor, course, data, behavior, language)
-                if response is None:
-                    self.send_error(503, "model query capacity exhausted")
-                    return
-                payload = {
-                    "answer": response.answer,
-                    "citations": response.citations,
-                    "retrieved": [
-                        {"block_id": x.block_id, "block_hash": x.block_hash, "score": x.score}
-                        for x in response.retrieved
-                    ],
-                    "model_run": to_dict(response.model_run),
-                }
-                body, status = json.dumps(payload, ensure_ascii=False).encode(), 200
-            except (ValueError, KeyError, json.JSONDecodeError) as error:
-                body, status = json.dumps({"error": str(error)}).encode(), 400
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            router.dispatch(self, "POST", urlparse(self.path).path)
 
         def log_message(self, format: str, *args: object) -> None:
             pass
@@ -541,6 +313,7 @@ def serve(
     max_concurrent_queries: int = 4,
     max_rate_limit_clients: int = 4096,
 ) -> None:
+    crypto_self_test()
     if shutdown_grace_seconds < 0:
         raise ValueError("shutdown grace period cannot be negative")
     tutor, course = configured_tutor(appliance_root)

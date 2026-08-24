@@ -15,10 +15,16 @@ class DatabaseStatus:
     integrity: str
 
 
-def connect_database(path: Path, *, kind: str, migrations: Sequence[str]) -> sqlite3.Connection:
+def connect_database(
+    path: Path,
+    *,
+    kind: str,
+    migrations: Sequence[str],
+    check_same_thread: bool = True,
+) -> sqlite3.Connection:
     if not kind.strip() or not migrations:
         raise ValueError("database kind and at least one migration are required")
-    connection = sqlite3.connect(path, timeout=5.0)
+    connection = sqlite3.connect(path, timeout=5.0, check_same_thread=check_same_thread)
     try:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA journal_mode=WAL")

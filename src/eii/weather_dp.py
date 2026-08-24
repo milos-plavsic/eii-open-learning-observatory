@@ -53,18 +53,19 @@ def release_counts(
     epsilon: float,
     epsilon_limit: float,
     event_sensitivity: int,
+    contributor_sensitivity: int = 1,
 ) -> tuple[list[dict[str, Any]], DifferentialPrivacyReceipt]:
     """Return one memoized DP release and atomically account for its privacy cost."""
     validate_policy(epsilon, epsilon_limit)
-    if event_sensitivity < 1:
-        raise ValueError("event sensitivity must be positive")
+    if event_sensitivity < 1 or contributor_sensitivity < 1:
+        raise ValueError("count sensitivity values must be positive")
     policy_hash = hashlib.sha256(
         json.dumps(
             {
                 "mechanism": "laplace",
                 "epsilon": epsilon,
                 "event_sensitivity": event_sensitivity,
-                "contributor_sensitivity": 1,
+                "contributor_sensitivity": contributor_sensitivity,
                 "allocation": "equal-split",
             },
             sort_keys=True,
@@ -114,7 +115,7 @@ def release_counts(
                 0,
                 round(
                     int(item["contributor_count"])
-                    + laplace_noise(sensitivity=1, epsilon=count_epsilon)
+                    + laplace_noise(sensitivity=contributor_sensitivity, epsilon=count_epsilon)
                 ),
             )
             item["explanation"] = (

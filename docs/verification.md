@@ -9,18 +9,19 @@ immutable checksums and signed release evidence.
 
 | Gate | Observed result |
 |---|---|
-| Warning-as-error unit/integration suite | 255 tests passed |
-| Coverage | 6,109 tracked statements and 1,924 branches at 100%, with 33 declared non-executable protocol and opposite-platform lock lines excluded |
+| Warning-as-error unit/integration suite | 271 tests passed locally on Python 3.14; the prior 263-test baseline passed on each of Python 3.11, 3.12, 3.13 and 3.14, and CI will repeat the expanded suite |
+| Coverage | 6,591 tracked statements and 2,022 branches at 100%, with 39 declared non-executable protocol and opposite-platform lock lines excluded |
 | Lint and formatting | Expanded Ruff rules and formatter passed for `src`, `tests`, and `tools` |
-| Static typing | Repository-wide strict `mypy` passed for 74 source files without module exemptions or ignored missing imports |
+| Static typing | Repository-wide strict `mypy` passed for 97 source files without module exemptions or ignored missing imports |
 | Critical mutation probes | Twenty-four mutations spanning cryptography, persistence, PLCT conformance, release/SBOM evidence, scoped safety decisions, replay text integrity, privacy bounds/differencing, model transport, retrieval, split/merge and scoped alignment, semantic abstention, status projection, canonical quotation, snapshot signing, incomplete metering, configured-panel denominators, consensus consistency, ledger-key binding and uncertainty matching were killed |
+| Flakiness hunter | Twenty shuffled 268-test full-suite passes succeeded; a nightly workflow repeats this independently of source changes |
 | Browser/accessibility | Real Chromium smoke and Axe scan completed with zero detected violations |
-| Security/dependencies | Bandit medium/high gate passed, `pip-audit` reported no known vulnerabilities, and `spdx-tools` independently validated the SPDX 2.3 document |
+| Security/dependencies | Bandit medium/high and five EII-specific Semgrep rules passed with zero blocking findings; `pip-audit` reported no known vulnerabilities, `spdx-tools` validates the SPDX 2.3 document in CI, and scheduled generic plus domain-specific rescans are configured |
 | Artifact reproducibility | Two fixed-epoch wheels and normalized source distributions compared byte-for-byte equal |
 | Clean source binding | Automated tests prove dirty-tree rejection and commit/archive binding; candidate generation requires a clean committed tree |
 | Version binding | Runtime, evidence producer, wheel metadata, source-distribution metadata, and requested candidate version all reported `0.2.0` |
 | Supported interpreters | Python 3.14 passed locally; CI repeats the warning-as-error suite on 3.11, 3.12, 3.13, and 3.14 and exercises real Ed25519 operations on Linux, macOS, and Windows |
-| Clean installation | The built wheel, `defusedxml`, and `rfc8785` installed into a new `uv` virtual environment; `eii --version` and `eii --help` succeeded |
+| Clean installation | The built wheel, `defusedxml`, and `rfc8785` installed into a new `uv` virtual environment; the wheel rebuilt from the sdist, and `eii --version` and `eii --help` succeeded |
 
 ## Commands
 
@@ -29,6 +30,7 @@ uv sync --extra dev
 uv run ruff check src tests tools
 uv run ruff format --check src tests tools
 uv run mypy
+uv run python tools/maintainability_gate.py
 uv run coverage erase
 PYTHONWARNINGS=error uv run coverage run -m unittest discover -s tests -p 'test_*.py'
 uv run coverage report

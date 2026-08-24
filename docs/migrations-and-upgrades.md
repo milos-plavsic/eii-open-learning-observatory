@@ -31,6 +31,10 @@ adds an authenticated publication journal. Schema 8 records the partition strate
 and prior artifact hash in that journal, allowing deterministic recovery at every
 filesystem/database crash boundary. Opening the database authenticates the complete
 ledger and finishes or rolls back journaled publications before accepting work.
+Schema 9 adds a singleton database-instance identity plus append-only lineage.
+Production configuration should supply the expected instance ID. A copied database
+opened under a different ID fails closed unless an operator explicitly records a
+fork; forked deployments must coordinate their combined privacy expenditure.
 
 Generate the linkage and ledger secrets separately with `weather-key-generate`.
 Treat the ledger key as durable recovery material. Rotate the linkage key only with
