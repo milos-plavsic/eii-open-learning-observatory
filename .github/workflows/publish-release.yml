@@ -60,6 +60,25 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$REVISION"
           gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
             -f ref="refs/tags/v$VERSION" -f sha="$REVISION"
+          cat > release-notes.md <<EOF
+          The first public alpha of the EII Open Learning Observatory: an independent,
+          open-source evidence and quality layer for multilingual digital courses and
+          educational AI.
+
+          This release includes BabelBridge, Curriculum MRI, Tutor Safety Case,
+          Classroom Weather Map, School-in-a-Box, signed evidence packages,
+          reproducible release tooling, and replaceable platform adapters.
+
+          The software has extensive internal verification but has not yet been
+          validated against a genuine Petlja export, independently certified, or
+          approved for production educational use.
+
+          Initial PLCT interoperability work was informed by Petlja's MIT-licensed
+          PLCT Server. Petlja has not reviewed, endorsed, sponsored, or certified this
+          release.
+
+          Verified release built and promoted from revision $REVISION.
+          EOF
           gh release create "v$VERSION" approved/* --verify-tag --latest \
-            --title "EII Open Learning Observatory v$VERSION" \
-            --notes "Verified release built and promoted from revision $REVISION."
+            --title "EII Open Learning Observatory $VERSION — First Public Alpha" \
+            --notes-file release-notes.md
