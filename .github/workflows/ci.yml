@@ -162,7 +162,7 @@ jobs:
         run: uv run python tests/mutation_probe.py
       - name: Rehearse publisher trust-key rotation end to end
         run: >-
-          PYTHONPATH=src uv run python -m unittest
+          PYTHONPATH=src:tests uv run python -m unittest
           tests.test_appliance.ApplianceTests.test_signed_trust_rotation_authorizes_new_publisher
           -v
 
