@@ -1,29 +1,27 @@
 # Verification record — 2026-08-24
 
-This is an immutable evidence ledger for the unreleased `0.3.0.dev0` development
-line. Its latest recorded merged revision is
-[`ea6f6d7`](https://github.com/milos-plavsic/eii-open-learning-observatory/commit/ea6f6d7),
-verified by [merged-main CI run 32731952234](https://github.com/milos-plavsic/eii-open-learning-observatory/actions/runs/32731952234)
-and [unpublished candidate run 32732275487](https://github.com/milos-plavsic/eii-open-learning-observatory/actions/runs/32732275487).
-The earlier behavior-changing revision
-[`db849bc`](https://github.com/milos-plavsic/eii-open-learning-observatory/commit/db849bcf34e85f3dd1590048df32cc9acf92e498)
-was additionally exercised by [nightly assurance run 32730179943](https://github.com/milos-plavsic/eii-open-learning-observatory/actions/runs/32730179943).
-Later revisions require their own successful run evidence; a run against an earlier
-commit is never presented as verification of a later one. These are EII-controlled
-results, not independent reproduction, certification, Petlja endorsement, or
-production approval. Published artifacts must carry immutable checksums and signed
-release evidence.
+This is an append-only evidence ledger for the unreleased `0.3.0.dev0` development
+line, not a claim that the last row verifies every future edit. The latest recorded
+merged revision is
+[`4d157cf`](https://github.com/milos-plavsic/eii-open-learning-observatory/commit/4d157cf6a49c6e00ed97fad2b76506fb3ab565da),
+verified by [merged-main CI run 32748245307](https://github.com/milos-plavsic/eii-open-learning-observatory/actions/runs/32748245307)
+and [nightly assurance run 32748264181](https://github.com/milos-plavsic/eii-open-learning-observatory/actions/runs/32748264181).
+For a newer commit, its required GitHub commit checks are authoritative until a
+later immutable run is added to this ledger; an older run is never evidence for a
+newer revision. These are EII-controlled results, not independent reproduction,
+certification, Petlja endorsement, or production approval. Published artifacts
+must carry immutable checksums and signed release evidence.
 
 ## Current evidence
 
 | Gate | Observed result |
 |---|---|
-| Warning-as-error unit/integration suite | The current working revision passes 272 tests locally; 271 tests passed in merged-main CI on Python 3.11, 3.12, 3.13 and 3.14 for the recorded revision, and the current revision still requires its own GitHub run evidence |
-| Coverage | The current working revision tracks 6,668 statements and 2,062 branches at 100%, with 39 declared non-executable protocol and opposite-platform lock lines excluded; merged-main evidence remains revision-specific |
+| Warning-as-error unit/integration suite | Recorded revision: 272 tests passed on Python 3.11, 3.12, 3.13 and 3.14 |
+| Coverage | Recorded revision: 6,670 statements and 2,062 branches at 100%, with 39 declared non-executable protocol and opposite-platform lock lines excluded |
 | Lint and formatting | Expanded Ruff rules and formatter passed for `src`, `tests`, and `tools` |
 | Static typing | Repository-wide strict `mypy` passed for 97 source files without module exemptions or ignored missing imports |
 | Critical mutation probes | Twenty-four mutations spanning cryptography, persistence, PLCT conformance, release/SBOM evidence, scoped safety decisions, replay text integrity, privacy bounds/differencing, model transport, retrieval, split/merge and scoped alignment, semantic abstention, status projection, canonical quotation, snapshot signing, incomplete metering, configured-panel denominators, consensus consistency, ledger-key binding and uncertainty matching were killed |
-| Flakiness hunter | Nightly run 32730179943 completed twenty shuffled 271-test full-suite passes against `db849bc`; this does not substitute for a new nightly after behavior changes |
+| Flakiness hunter | Nightly run 32748264181 completed twenty shuffled 272-test full-suite passes against `4d157cf` |
 | Browser/accessibility | Real Chromium smoke and Axe scan completed with zero detected violations |
 | Security/dependencies | Bandit medium/high and five EII-specific Semgrep rules passed with zero blocking findings; `pip-audit` reported no known vulnerabilities, `spdx-tools` validates the SPDX 2.3 document in CI, and scheduled generic plus domain-specific rescans are configured |
 | Artifact reproducibility | Two fixed-epoch wheels and normalized source distributions compared byte-for-byte equal |

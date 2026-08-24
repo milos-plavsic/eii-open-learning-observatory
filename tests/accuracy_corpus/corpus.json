@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "cases": [
     {
       "id": "cocreate-six-language-known-gap",
@@ -12,9 +12,42 @@
         "examples/cocreate-mini/hr"
       ],
       "glossary": "examples/cocreate-mini/glossary.json",
-      "expected": ["translation.missing_unit"],
-      "forbidden": ["translation.number_or_unit_drift"],
-      "maximum_finding_severity": "high",
+      "expected_findings": [
+        {
+          "finding_type": "translation.missing_unit",
+          "severity": "high",
+          "affected_languages": [
+            "hr"
+          ],
+          "evidence": [
+            {
+              "language": "en",
+              "locator": "lesson.md#range",
+              "excerpt": "`range(3)` produces 0, 1, and 2."
+            },
+            {
+              "language": "sr",
+              "locator": "lesson.md#opseg",
+              "excerpt": "`range(3)` proizvodi 0, 1 i 2."
+            },
+            {
+              "language": "es",
+              "locator": "lesson.md#rango",
+              "excerpt": "`range(3)` produce 0, 1 y 2."
+            },
+            {
+              "language": "pt",
+              "locator": "lesson.md#intervalo",
+              "excerpt": "`range(3)` produz 0, 1 e 2."
+            },
+            {
+              "language": "ca",
+              "locator": "lesson.md#rang",
+              "excerpt": "`range(3)` produeix 0, 1 i 2."
+            }
+          ]
+        }
+      ],
       "provenance": "authored-realistic-open-fixture"
     },
     {
@@ -23,9 +56,7 @@
         "tests/accuracy_corpus/clean-number-nouns/en",
         "tests/accuracy_corpus/clean-number-nouns/sr"
       ],
-      "expected": [],
-      "forbidden": ["translation.number_or_unit_drift"],
-      "maximum_finding_severity": "none",
+      "expected_findings": [],
       "provenance": "human-labeled-negative-regression-fixture"
     },
     {
@@ -38,15 +69,7 @@
         "tests/accuracy_corpus/clean-six-language/ca",
         "tests/accuracy_corpus/clean-six-language/hr"
       ],
-      "expected": [],
-      "forbidden": [
-        "translation.number_or_unit_drift",
-        "translation.number_or_unit_order_drift",
-        "translation.code_drift",
-        "translation.link_or_asset_drift",
-        "translation.missing_unit"
-      ],
-      "maximum_finding_severity": "none",
+      "expected_findings": [],
       "provenance": "human-labeled-six-language-negative-fixture"
     },
     {
@@ -59,14 +82,164 @@
         "tests/accuracy_corpus/positive-six-language/ca",
         "tests/accuracy_corpus/positive-six-language/hr"
       ],
-      "expected": [
-        "translation.number_or_unit_drift",
-        "translation.number_or_unit_order_drift",
-        "translation.code_drift",
-        "translation.link_or_asset_drift"
+      "expected_findings": [
+        {
+          "finding_type": "translation.number_or_unit_drift",
+          "severity": "high",
+          "affected_languages": [
+            "es"
+          ],
+          "evidence": [
+            {
+              "language": "en",
+              "locator": "lesson.md#measurement",
+              "excerpt": "The package weighs 10 kg."
+            },
+            {
+              "language": "sr",
+              "locator": "lesson.md#merenje",
+              "excerpt": "Paket teži 10 kg."
+            },
+            {
+              "language": "es",
+              "locator": "lesson.md#medición",
+              "excerpt": "El paquete pesa 12 kg."
+            },
+            {
+              "language": "pt",
+              "locator": "lesson.md#medição",
+              "excerpt": "O pacote pesa 10 kg."
+            },
+            {
+              "language": "ca",
+              "locator": "lesson.md#mesura",
+              "excerpt": "El paquet pesa 10 kg."
+            },
+            {
+              "language": "hr",
+              "locator": "lesson.md#mjerenje",
+              "excerpt": "Paket teži 10 kg."
+            }
+          ]
+        },
+        {
+          "finding_type": "translation.code_drift",
+          "severity": "high",
+          "affected_languages": [
+            "sr"
+          ],
+          "evidence": [
+            {
+              "language": "en",
+              "locator": "lesson.md#code",
+              "excerpt": "Use `total = count`."
+            },
+            {
+              "language": "sr",
+              "locator": "lesson.md#kôd",
+              "excerpt": "Koristite `zbir = broj`."
+            },
+            {
+              "language": "es",
+              "locator": "lesson.md#código",
+              "excerpt": "Use `total = count`."
+            },
+            {
+              "language": "pt",
+              "locator": "lesson.md#código",
+              "excerpt": "Use `total = count`."
+            },
+            {
+              "language": "ca",
+              "locator": "lesson.md#codi",
+              "excerpt": "Useu `total = count`."
+            },
+            {
+              "language": "hr",
+              "locator": "lesson.md#kôd",
+              "excerpt": "Koristite `total = count`."
+            }
+          ]
+        },
+        {
+          "finding_type": "translation.link_or_asset_drift",
+          "severity": "medium",
+          "affected_languages": [
+            "pt"
+          ],
+          "evidence": [
+            {
+              "language": "en",
+              "locator": "lesson.md#resource",
+              "excerpt": "Read [the guide](https://example.org/loops)."
+            },
+            {
+              "language": "sr",
+              "locator": "lesson.md#izvor",
+              "excerpt": "Pročitajte [vodič](https://example.org/loops)."
+            },
+            {
+              "language": "es",
+              "locator": "lesson.md#recurso",
+              "excerpt": "Lea [la guía](https://example.org/loops)."
+            },
+            {
+              "language": "pt",
+              "locator": "lesson.md#recurso",
+              "excerpt": "Leia [o guia](https://example.org/while)."
+            },
+            {
+              "language": "ca",
+              "locator": "lesson.md#recurs",
+              "excerpt": "Llegiu [la guia](https://example.org/loops)."
+            },
+            {
+              "language": "hr",
+              "locator": "lesson.md#izvor",
+              "excerpt": "Pročitajte [vodič](https://example.org/loops)."
+            }
+          ]
+        },
+        {
+          "finding_type": "translation.number_or_unit_order_drift",
+          "severity": "low",
+          "affected_languages": [
+            "ca"
+          ],
+          "evidence": [
+            {
+              "language": "en",
+              "locator": "lesson.md#sequence",
+              "excerpt": "Perform steps 1, 2."
+            },
+            {
+              "language": "sr",
+              "locator": "lesson.md#redosled",
+              "excerpt": "Izvršite korake 1, 2."
+            },
+            {
+              "language": "es",
+              "locator": "lesson.md#secuencia",
+              "excerpt": "Realice los pasos 1, 2."
+            },
+            {
+              "language": "pt",
+              "locator": "lesson.md#sequência",
+              "excerpt": "Execute os passos 1, 2."
+            },
+            {
+              "language": "ca",
+              "locator": "lesson.md#seqüència",
+              "excerpt": "Feu els passos 2, 1."
+            },
+            {
+              "language": "hr",
+              "locator": "lesson.md#redoslijed",
+              "excerpt": "Izvršite korake 1, 2."
+            }
+          ]
+        }
       ],
-      "forbidden": ["translation.missing_unit"],
-      "maximum_finding_severity": "high",
       "provenance": "human-labeled-six-language-positive-fixture"
     }
   ]

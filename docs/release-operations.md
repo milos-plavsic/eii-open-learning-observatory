@@ -97,7 +97,9 @@ tag and public release inside `production-publish`.
 The publication workflow rejects the promotion actor as publisher, providing a
 machine-enforced two-person release boundary. Until VAL-010 closes, maintainer
 succession, independent control of two accounts, and signing-key succession remain
-explicit governance gaps.
+explicit governance gaps. Appoint and rehearse those roles using
+[`maintainer-succession.md`](maintainer-succession.md); the runbook is preparation,
+not substitute evidence.
 The record conforms to the immutable
 [`release-approval-1.0`](https://eii.edu.eu/schemas/release-approval-1.0.json)
 schema and is verified against `release-evidence.json` before signing and again

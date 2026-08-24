@@ -23,6 +23,33 @@ class PatternRoute:
     handler: RouteHandler
 
 
+def _segment_intersects(left: str, right: str) -> bool:
+    """Return whether two non-path segment tokens share at least one value."""
+    if left == "{segment}":
+        return right == "{segment}" or bool(right)
+    if right == "{segment}":
+        return bool(left)
+    return left == right
+
+
+def patterns_intersect(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    """Decide intersection for literals, one-segment wildcards and terminal paths."""
+    left_path = left.index("{path}") if "{path}" in left else None
+    right_path = right.index("{path}") if "{path}" in right else None
+    left_fixed = len(left) if left_path is None else left_path
+    right_fixed = len(right) if right_path is None else right_path
+    common = min(left_fixed, right_fixed)
+    if any(not _segment_intersects(left[index], right[index]) for index in range(common)):
+        return False
+    if left_path is None and right_path is None:
+        return len(left) == len(right)
+    if left_path is not None and right_path is None:
+        return len(right) >= left_path
+    if left_path is None:
+        return len(left) >= cast(int, right_path)
+    return True
+
+
 def compile_path_pattern(template: str) -> tuple[re.Pattern[str], tuple[str, ...], tuple[int, int]]:
     """Compile a bounded segment pattern without permitting arbitrary regex."""
     if not template.startswith("/") or "?" in template or "#" in template:
@@ -63,7 +90,6 @@ class ApplianceRouter:
 
     routes: dict[tuple[str, str], RouteHandler] = field(default_factory=dict)
     patterns: list[PatternRoute] = field(default_factory=list)
-    pattern_shapes: set[tuple[str, tuple[str, ...]]] = field(default_factory=set)
 
     def add(self, method: str, path: str, handler: RouteHandler) -> None:
         if "{" in path or "}" in path:
@@ -79,16 +105,19 @@ class ApplianceRouter:
     def add_pattern(self, method: str, template: str, handler: RouteHandler) -> None:
         normalized = method.upper()
         expression, shape, specificity = compile_path_pattern(template)
-        identity = (normalized, shape)
-        if identity in self.pattern_shapes:
+        if any(
+            route.method == normalized
+            and route.specificity == specificity
+            and patterns_intersect(route.shape, shape)
+            for route in self.patterns
+        ):
             raise ValueError(
-                f"duplicate or ambiguous appliance route pattern: {normalized} {template}"
+                f"equal-precedence appliance route patterns overlap: {normalized} {template}"
             )
-        self.pattern_shapes.add(identity)
         self.patterns.append(
             PatternRoute(normalized, template, expression, shape, specificity, handler)
         )
-        self.patterns.sort(key=lambda route: route.specificity, reverse=True)
+        self.patterns.sort(key=lambda route: (route.specificity, route.template), reverse=True)
 
     def dispatch(self, request: ObservableHandler, method: str, path: str) -> None:
         normalized = method.upper()
