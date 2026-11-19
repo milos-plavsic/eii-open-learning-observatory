@@ -63,7 +63,7 @@ for defensive XML parsing and `rfc8785` for standards-based canonical evidence;
 no embedding library, model weights, or ML runtime is bundled.
 
 ```bash
-python -m pip install -e '.[test]'
+python -m pip install -e '.[dev]'
 python -m unittest discover -s tests
 python -m eii --help
 ```
